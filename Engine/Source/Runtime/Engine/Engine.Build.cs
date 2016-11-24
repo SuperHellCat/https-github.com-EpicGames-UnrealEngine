@@ -7,7 +7,9 @@ public class Engine : ModuleRules
 {
 	public Engine(TargetInfo Target)
 	{
-		SharedPCHHeaderFile = "Runtime/Engine/Public/Engine.h";
+		PrivatePCHHeaderFile = "Private/EnginePrivatePCH.h";
+
+		SharedPCHHeaderFile = "Public/EngineSharedPCH.h";
 
 		PublicIncludePathModuleNames.AddRange(new string[] { "Renderer", "PacketHandler", "NetworkReplayStreaming" });
 

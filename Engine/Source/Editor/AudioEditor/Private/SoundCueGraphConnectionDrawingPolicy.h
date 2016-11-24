@@ -2,9 +2,14 @@
 
 #pragma once
 
+#include "CoreMinimal.h"
+#include "Layout/ArrangedWidget.h"
+#include "Widgets/SWidget.h"
 #include "EdGraphUtilities.h"
 #include "ConnectionDrawingPolicy.h"
-#include "SoundCueGraphConnectionDrawingPolicy.h"
+
+class FSlateWindowElementList;
+class UEdGraph;
 
 struct FSoundCueGraphConnectionDrawingPolicyFactory : public FGraphPanelPinConnectionFactory
 {
@@ -17,6 +22,9 @@ public:
 
 };
 
+
+class FSlateWindowElementList;
+class UEdGraph;
 
 /////////////////////////////////////////////////////
 // FSoundCueGraphConnectionDrawingPolicy

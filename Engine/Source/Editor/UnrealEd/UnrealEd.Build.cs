@@ -7,7 +7,9 @@ public class UnrealEd : ModuleRules
 {
 	public UnrealEd(TargetInfo Target)
 	{
-		SharedPCHHeaderFile = "Editor/UnrealEd/Public/UnrealEd.h";
+		PrivatePCHHeaderFile = "Private/UnrealEdPrivatePCH.h";
+
+		SharedPCHHeaderFile = "Public/UnrealEdSharedPCH.h";
 
 		PrivateIncludePaths.AddRange(
 			new string[] 

@@ -2,12 +2,18 @@
 
 #pragma once
 
-#include "SlateBasics.h"
-#include "SuperSearchStyle.h"
-
+#include "CoreMinimal.h"
+#include "UObject/ObjectMacros.h"
+#include "Widgets/SWidget.h"
 #if WITH_EDITOR
 #include "AssetData.h"
 #endif
+#include "Modules/ModuleInterface.h"
+#include "Modules/ModuleManager.h"
+
+class SEditableTextBox;
+class SSuperSearchBox;
+struct FSuperSearchStyle;
 
 struct FSearchEntry
 {

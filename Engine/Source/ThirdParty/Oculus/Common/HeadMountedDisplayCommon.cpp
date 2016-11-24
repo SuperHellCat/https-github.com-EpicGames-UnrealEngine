@@ -1,12 +1,17 @@
 // Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
 
-#include "Engine.h"
 #include "HeadMountedDisplayCommon.h"
 #include "RendererPrivate.h"
 #include "ScenePrivate.h"
 #include "PostProcess/PostProcessHMD.h"
 #include "ScreenRendering.h"
 #include "AsyncLoadingSplash.h"
+#include "Engine/StaticMesh.h"
+#include "GameFramework/WorldSettings.h"
+#include "GameFramework/PlayerController.h"
+#include "DrawDebugHelpers.h"
+#include "Components/InstancedStaticMeshComponent.h"
+#include "Engine/StaticMeshActor.h"
 
 #if OCULUS_STRESS_TESTS_ENABLED
 #include "OculusStressTests.h"
@@ -2379,7 +2384,7 @@ static void DrawPokeAHoleCylinderMesh(FRHICommandList& RHICmdList, FVector Base,
 	DrawIndexedPrimitiveUP(RHICmdList, PT_TriangleList, 0, 2*(Sides+1), 2*Sides, Indices, sizeof(Indices[0]), Vertices, sizeof(Vertices[0]));
 }
 
-static void DrawPokeAHoleMesh(FRHICommandList& RHICmdList,const FHMDLayerDesc& LayerDesc, FMatrix& matrix, float scale, bool invertCoords)
+static void DrawPokeAHoleMesh(FRHICommandList& RHICmdList,const FHMDLayerDesc& LayerDesc, const FMatrix& matrix, float scale, bool invertCoords)
 {
 	if (LayerDesc.GetType() == FHMDLayerDesc::Quad)
 	{

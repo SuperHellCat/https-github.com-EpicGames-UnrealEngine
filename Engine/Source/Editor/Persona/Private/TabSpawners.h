@@ -2,13 +2,30 @@
 
 #pragma once
 
-#include "IDocumentation.h"
-#include "AnimationEditorViewportClient.h"
+#include "CoreMinimal.h"
+#include "Input/Reply.h"
+#include "Layout/Visibility.h"
+#include "Widgets/SWidget.h"
+#include "Widgets/DeclarativeSyntaxSupport.h"
 #include "IPersonaViewport.h"
+#include "Toolkits/AssetEditorToolkit.h"
+#include "WorkflowOrientedApp/WorkflowTabFactory.h"
+#include "WorkflowOrientedApp/WorkflowTabManager.h"
+#include "BlueprintEditor.h"
+#include "WorkflowOrientedApp/ApplicationMode.h"
+#include "IDocumentation.h"
 #include "PersonaModule.h"
+#include "IPersonaPreviewScene.h"
+#include "AnimationEditorViewportClient.h"
 #include "SSingleObjectDetailsPanel.h"
 
 #define LOCTEXT_NAMESPACE "PersonaMode"
+
+class IEditableSkeleton;
+class IPersonaToolkit;
+class ISkeletonTree;
+class SPersonaDetails;
+class SToolTip;
 
 /////////////////////////////////////////////////////
 
@@ -151,23 +168,6 @@ protected:
 
 	// Set of spawnable tabs in persona mode (@TODO: Multiple lists!)
 	FWorkflowAllowedTabSet PersonaTabFactories;
-};
-
-/////////////////////////////////////////////////////
-// FSkeletonTreeSummoner
-
-struct FSkeletonTreeSummoner : public FWorkflowTabFactory
-{
-public:
-	FSkeletonTreeSummoner(TSharedPtr<class FAssetEditorToolkit> InHostingApp);
-	
-	virtual TSharedRef<SWidget> CreateTabBody(const FWorkflowTabSpawnInfo& Info) const override;
-
-	// Create a tooltip widget for the tab
-	virtual TSharedPtr<SToolTip> CreateTabToolTipWidget(const FWorkflowTabSpawnInfo& Info) const override
-	{
-		return  IDocumentation::Get()->CreateToolTip(LOCTEXT("SkeletonTreeTooltip", "The Skeleton Tree tab lets you see and select bones (and sockets) in the skeleton hierarchy."), NULL, TEXT("Shared/Editors/Persona"), TEXT("SkeletonTree_Window"));
-	}
 };
 
 /////////////////////////////////////////////////////
@@ -372,12 +372,12 @@ private:
 };
 
 /////////////////////////////////////////////////////
-// FDetailsTabSummoner
+// FPersonaDetailsTabSummoner
 
-struct FDetailsTabSummoner : public FWorkflowTabFactory
+struct FPersonaDetailsTabSummoner : public FWorkflowTabFactory
 {
 public:
-	FDetailsTabSummoner(TSharedPtr<class FAssetEditorToolkit> InHostingApp, FOnDetailsCreated InOnDetailsCreated);
+	FPersonaDetailsTabSummoner(TSharedPtr<class FAssetEditorToolkit> InHostingApp, FOnDetailsCreated InOnDetailsCreated);
 	virtual TSharedRef<SWidget> CreateTabBody(const FWorkflowTabSpawnInfo& Info) const override;
 	virtual FText GetTabToolTipText(const FWorkflowTabSpawnInfo& Info) const override;
 

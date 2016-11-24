@@ -507,7 +507,10 @@ namespace AutomationTool
 					}
 
 					Version.Changelist = ChangelistNumber;
-					Version.CompatibleChangelist = CompatibleChangelistNumber;
+					if(CompatibleChangelistNumber > 0)
+					{
+						Version.CompatibleChangelist = CompatibleChangelistNumber;
+					}
 					Version.IsLicenseeVersion = bIsLicenseeVersion? 1 : 0;
 					Version.BranchName = Branch;
 
@@ -857,7 +860,7 @@ namespace AutomationTool
 					PushDir(CombinePaths(CmdEnv.LocalRoot, @"\Engine\Source"));
 					try
 					{
-						int ExitCode = ParallelExecutor.Execute(TaskFilePath);
+						int ExitCode = ParallelExecutor.Execute(TaskFilePath, OwnerCommand.ParseParam("StopOnErrors"));
 						if(ExitCode != 0)
 						{
 							return false;

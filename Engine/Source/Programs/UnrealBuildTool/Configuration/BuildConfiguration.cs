@@ -110,6 +110,12 @@ namespace UnrealBuildTool
 		public static bool bDisableDebugInfo;
 
 		/// <summary>
+		/// Whether to disable debug info generation for generated files. This improves link times for modules that have a lot of generated glue code.
+		/// </summary>
+		[XmlConfig]
+		public static bool bDisableDebugInfoForGeneratedCode;
+
+		/// <summary>
 		/// Whether to disable debug info on PC in development builds (for faster developer iteration, as link times are extremely fast with debug info disabled.)
 		/// </summary>
 		[XmlConfig]
@@ -292,6 +298,17 @@ namespace UnrealBuildTool
 		/// </summary>
 		[XmlConfig]
 		public static string PCHOutputDirectory;
+
+		/// <summary>
+		/// Whether we should export a JSON file containing detailed target information.
+		/// </summary>
+		[XmlConfig]
+		public static string JsonExportFile;
+
+		/// <summary>
+		/// Skip building; just do setup and terminate.
+		/// </summary>
+		public static bool bSkipBuild;
 
 		/// <summary>
 		/// Relative root engine path.
@@ -596,6 +613,7 @@ namespace UnrealBuildTool
 			bCreateStubIPA = true;
 			bDeployAfterCompile = false;
 			bDisableDebugInfo = false;
+			bDisableDebugInfoForGeneratedCode = true;
 			bEnableCodeAnalysis = false;
 			bFlushBuildDirOnRemoteMac = false;
 			bGeneratedSYMFile = true;
