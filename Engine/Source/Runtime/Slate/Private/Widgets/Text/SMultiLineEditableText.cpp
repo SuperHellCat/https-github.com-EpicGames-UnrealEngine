@@ -505,7 +505,7 @@ FReply SMultiLineEditableText::OnKeyDown( const FGeometry& MyGeometry, const FKe
 
 FReply SMultiLineEditableText::OnKeyUp( const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent )
 {
-	return FReply::Unhandled();
+	return EditableTextLayout->HandleKeyUp(InKeyEvent);
 }
 
 FReply SMultiLineEditableText::OnMouseButtonDown( const FGeometry& MyGeometry, const FPointerEvent& MouseEvent ) 
@@ -580,7 +580,7 @@ FReply SMultiLineEditableText::OnMouseWheel( const FGeometry& MyGeometry, const 
 {
 	if (VScrollBar.IsValid() && VScrollBar->IsNeeded())
 	{
-		const float ScrollAmount = -MouseEvent.GetWheelDelta() * WheelScrollAmount;
+		const float ScrollAmount = -MouseEvent.GetWheelDelta() * GetGlobalScrollAmount();
 
 		const FVector2D PreviousScrollOffset = EditableTextLayout->GetScrollOffset();
 		

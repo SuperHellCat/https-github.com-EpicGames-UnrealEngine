@@ -9,7 +9,7 @@
 #include "OnlineSubsystemOculusTypes.h"
 #include "OnlineSubsystemOculusPackage.h"
 THIRD_PARTY_INCLUDES_START
-	#include <string>
+#include <string>
 THIRD_PARTY_INCLUDES_END
 
 class FOnlineOculusFriend : public FOnlineFriend

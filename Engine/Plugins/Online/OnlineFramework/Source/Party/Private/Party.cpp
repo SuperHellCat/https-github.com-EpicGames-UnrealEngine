@@ -506,7 +506,7 @@ void UParty::PartyExitedInternal(const FUniqueNetId& LocalUserId, const FOnlineP
 	}
 	else
 	{
-		UE_LOG(LogParty, Warning, TEXT("[%s]: Missing party state during exit"), *InPartyId.ToString());
+		UE_LOG(LogParty, Display, TEXT("[%s]: Missing party state during exit"), *InPartyId.ToString());
 	}
 }
 
