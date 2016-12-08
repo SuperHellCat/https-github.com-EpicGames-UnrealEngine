@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
 
 #include "AI/Navigation/RecastNavMeshGenerator.h"
 #include "AI/Navigation/NavRelevantInterface.h"
@@ -2542,7 +2542,7 @@ bool FRecastTileGenerator::GenerateNavigationData(FNavMeshBuildContext& BuildCon
 
 	for (int32 iLayer = 0; iLayer < CompressedLayers.Num(); iLayer++)
 	{
-		if (DirtyLayers[iLayer] == false)
+		if (DirtyLayers[iLayer] == false || !CompressedLayers[iLayer].IsValid())
 		{
 			// skip layers not marked for rebuild
 			continue;

@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
 
 #include "AnimationRecorder.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
@@ -309,6 +309,8 @@ UAnimSequence* FAnimationRecorder::StopRecord(bool bShowMessage)
 
 				TArray<float> TimesToRecord;
 				TArray<float> ValuesToRecord;
+				TimesToRecord.SetNum(NumFrames);
+				ValuesToRecord.SetNum(NumFrames);
 
 				for (int32 FrameIndex = 0; FrameIndex < NumFrames; ++FrameIndex)
 				{
@@ -328,8 +330,8 @@ UAnimSequence* FAnimationRecorder::StopRecord(bool bShowMessage)
 
 					if (FloatCurveData)
 					{
-						TimesToRecord.Add(TimeToRecord);
-						ValuesToRecord.Add(CurCurve.Value);
+						TimesToRecord[FrameIndex] = TimeToRecord;
+						ValuesToRecord[FrameIndex] = CurCurve.Value;
 					}
 				}
 

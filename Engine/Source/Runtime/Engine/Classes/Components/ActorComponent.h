@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -850,6 +850,11 @@ private:
 	virtual void Tick( float DeltaTime ) final { check(0); }
 
 #endif
+
+public:
+
+	/** Prefix used to identify template component instances */
+	static const FString ComponentTemplateNameSuffix;
 };
 
 //////////////////////////////////////////////////////////////////////////

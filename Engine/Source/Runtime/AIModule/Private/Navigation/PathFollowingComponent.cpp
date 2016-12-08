@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
 
 #include "Navigation/PathFollowingComponent.h"
 #include "UObject/Package.h"
@@ -928,6 +928,9 @@ void UPathFollowingComponent::FollowPathSegment(float DeltaTime)
 
 	const FVector CurrentLocation = MovementComp->GetActorFeetLocation();
 	const FVector CurrentTarget = GetCurrentTargetLocation();
+	
+	// set to false by default, we will set set this back to true if appropriate
+	bIsDecelerating = false;
 
 	const bool bAccelerationBased = MovementComp->UseAccelerationForPathFollowing();
 	if (bAccelerationBased)
@@ -941,6 +944,8 @@ void UPathFollowingComponent::FollowPathSegment(float DeltaTime)
 			const bool bShouldDecelerate = DistToEndSq < FMath::Square(CachedBrakingDistance);
 			if (bShouldDecelerate)
 			{
+				bIsDecelerating = true;
+
 				const float SpeedPct = FMath::Clamp(FMath::Sqrt(DistToEndSq) / CachedBrakingDistance, 0.0f, 1.0f);
 				CurrentMoveInput *= SpeedPct;
 			}

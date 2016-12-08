@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
 
 #include "PhysicsEngine/PhysicsHandleComponent.h"
 #include "EngineDefines.h"
@@ -251,8 +251,10 @@ void UPhysicsHandleComponent::ReleaseComponent()
 #endif // WITH_PHYSX
 }
 
-
-
+UPrimitiveComponent* UPhysicsHandleComponent::GetGrabbedComponent() const
+{
+	return GrabbedComponent;
+}
 
 void UPhysicsHandleComponent::SetTargetLocation(FVector NewLocation)
 {

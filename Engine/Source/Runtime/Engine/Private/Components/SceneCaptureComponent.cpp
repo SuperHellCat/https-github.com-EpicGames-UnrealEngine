@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	
@@ -246,6 +246,29 @@ void USceneCaptureComponent::ShowOnlyActorComponents(AActor* InActor)
 			ShowOnlyComponents.Add(PrimitiveComponents[ComponentIndex]);
 		}
 	}
+}
+
+void USceneCaptureComponent::RemoveShowOnlyComponent(UPrimitiveComponent* InComponent)
+{
+	ShowOnlyComponents.Remove(InComponent);
+}
+
+void USceneCaptureComponent::RemoveShowOnlyActorComponents(AActor* InActor)
+{
+	if (InActor)
+	{
+		TInlineComponentArray<UPrimitiveComponent*> PrimitiveComponents;
+		InActor->GetComponents(PrimitiveComponents);
+		for (int32 ComponentIndex = 0, NumComponents = PrimitiveComponents.Num(); ComponentIndex < NumComponents; ++ComponentIndex)
+		{
+			ShowOnlyComponents.Remove(PrimitiveComponents[ComponentIndex]);
+		}
+	}
+}
+
+void USceneCaptureComponent::ClearShowOnlyComponents(UPrimitiveComponent* InComponent)
+{
+	ShowOnlyComponents.Reset();
 }
 
 FSceneViewStateInterface* USceneCaptureComponent::GetViewState()

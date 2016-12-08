@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
 
 /**
  * Movement component that is compatible with the navigation system's PathFollowingComponent
@@ -39,7 +39,7 @@ protected:
 	UPROPERTY(EditAnywhere, Category = NavMovement)
 	uint32 bUpdateNavAgentWithOwnersCollision:1;
 
-	/** If set, FixedPathBrakingDistance will be used for path following deceleration */
+	/** If set, pathfollowing will control character movement via acceleration values. If false, it will set velocities directly. */
 	UPROPERTY(EditAnywhere, Category = NavMovement, GlobalConfig)
 	uint32 bUseAccelerationForPaths : 1;
 

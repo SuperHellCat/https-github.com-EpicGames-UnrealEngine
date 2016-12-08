@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
 
 #include "Tasks/AITask_MoveTo.h"
 #include "UObject/Package.h"
@@ -86,7 +86,7 @@ void UAITask_MoveTo::FinishMoveTask(EPathFollowingResult::Type InResult)
 	}
 	else
 	{
-		OnMoveFinished.Broadcast(InResult);
+		OnMoveFinished.Broadcast(InResult, OwnerController);
 	}
 }
 

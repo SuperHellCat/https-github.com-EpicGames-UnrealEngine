@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -63,6 +63,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category="Expansion")
 	void SetIsExpanded(bool IsExpanded);
+
+	UFUNCTION(BlueprintCallable, Category = "Expansion")
+	void SetIsExpanded_Animated(bool IsExpanded);
 	
 	// Begin INamedSlotInterface
 	virtual void GetSlotNames(TArray<FName>& SlotNames) const override;

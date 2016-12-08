@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	PreviewScene.cpp: Preview scene implementation.
@@ -43,6 +43,7 @@ FPreviewScene::FPreviewScene(FPreviewScene::ConstructionValues CVS)
 	AddComponent(DirectionalLight, FTransform(CVS.LightRotation));
 
 	LineBatcher = NewObject<ULineBatchComponent>(GetTransientPackage());
+	LineBatcher->bCalculateAccurateBounds = false;
 	AddComponent(LineBatcher, FTransform::Identity);
 }
 

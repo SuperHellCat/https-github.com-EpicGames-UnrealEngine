@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
 
 #include "OnlineSubsystemImpl.h"
 #include "Containers/Ticker.h"
@@ -56,9 +56,12 @@ void FOnlineSubsystemImpl::ExecuteDelegateNextTick(const FNextTickDelegate& Call
 
 void FOnlineSubsystemImpl::StartTicker()
 {
-	// Register delegate for ticker callback
-	FTickerDelegate TickDelegate = FTickerDelegate::CreateRaw(this, &FOnlineSubsystemImpl::Tick);
-	TickHandle = FTicker::GetCoreTicker().AddTicker(TickDelegate, 0.0f);
+	if (!TickHandle.IsValid())
+	{
+		// Register delegate for ticker callback
+		FTickerDelegate TickDelegate = FTickerDelegate::CreateRaw(this, &FOnlineSubsystemImpl::Tick);
+		TickHandle = FTicker::GetCoreTicker().AddTicker(TickDelegate, 0.0f);
+	}
 }
 
 void FOnlineSubsystemImpl::StopTicker()

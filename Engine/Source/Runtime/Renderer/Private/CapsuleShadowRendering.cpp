@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	CapsuleShadowRendering.cpp: Functionality for rendering shadows from capsules
@@ -1119,6 +1119,7 @@ void FDeferredShadingSceneRenderer::RenderIndirectCapsuleShadows(
 	FTextureRHIParamRef ExistingIndirectOcclusionTexture) const
 {
 	if (SupportsCapsuleShadows(FeatureLevel, GShaderPlatformForFeatureLevel[FeatureLevel])
+		&& ViewFamily.EngineShowFlags.DynamicShadows
 		&& FSceneRenderTargets::Get(RHICmdList).IsStaticLightingAllowed())
 	{
 		QUICK_SCOPE_CYCLE_COUNTER(STAT_RenderIndirectCapsuleShadows);

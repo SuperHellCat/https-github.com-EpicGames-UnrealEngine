@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
 
 /*=============================================================================
 	UnParticleComponent.cpp: Particle component implementation.
@@ -3522,10 +3522,10 @@ void UParticleSystemComponent::OnRegister()
 			}
 		}
 
-			SavedAutoAttachRelativeLocation = RelativeLocation;
-			SavedAutoAttachRelativeRotation = RelativeRotation;
-			SavedAutoAttachRelativeScale3D = RelativeScale3D;
-		}
+		SavedAutoAttachRelativeLocation = RelativeLocation;
+		SavedAutoAttachRelativeRotation = RelativeRotation;
+		SavedAutoAttachRelativeScale3D = RelativeScale3D;
+	}
 
 	Super::OnRegister();
 

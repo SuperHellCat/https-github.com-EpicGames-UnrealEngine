@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
 
 #include "AI/Navigation/NavLinkCustomComponent.h"
 #include "TimerManager.h"
@@ -14,6 +14,7 @@
 #include "Navigation/PathFollowingComponent.h"
 #include "AI/NavigationModifier.h"
 #include "AI/NavigationOctree.h"
+#include "AI/NavigationSystemHelpers.h"
 
 UNavLinkCustomComponent::UNavLinkCustomComponent(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {
@@ -94,8 +95,12 @@ void UNavLinkCustomComponent::OnLinkMoveFinished(UPathFollowingComponent* PathCo
 
 void UNavLinkCustomComponent::GetNavigationData(FNavigationRelevantData& Data) const
 {
+	TArray<FNavigationLink> NavLinks;
 	FNavigationLink LinkMod = GetLinkModifier();
-	Data.Modifiers.Add(FSimpleLinkNavModifier(LinkMod, GetOwner()->GetTransform()));
+	LinkMod.MaxFallDownLength = 0.f;
+	LinkMod.LeftProjectHeight = 0.f;
+	NavLinks.Add(LinkMod);
+	NavigationHelper::ProcessNavLinkAndAppend(&Data.Modifiers, GetOwner(), NavLinks);
 
 	if (bCreateBoxObstacle)
 	{
@@ -142,6 +147,7 @@ void UNavLinkCustomComponent::SetLinkData(const FVector& RelativeStart, const FV
 	LinkDirection = Direction;
 	
 	RefreshNavigationModifiers();
+	MarkRenderStateDirty();
 }
 
 FNavigationLink UNavLinkCustomComponent::GetLinkModifier() const

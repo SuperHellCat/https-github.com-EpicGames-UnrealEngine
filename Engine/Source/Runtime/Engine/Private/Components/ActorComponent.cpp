@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
 // ActorComponent.cpp: Actor component implementation.
 
 #include "Components/ActorComponent.h"
@@ -125,6 +125,8 @@ FGlobalComponentRecreateRenderStateContext::~FGlobalComponentRecreateRenderState
 FActorComponentCreatePhysicsSignature UActorComponent::CreatePhysicsDelegate;
 // Destroy Physics global delegate
 FActorComponentDestroyPhysicsSignature UActorComponent::DestroyPhysicsDelegate;
+
+const FString UActorComponent::ComponentTemplateNameSuffix(TEXT("_GEN_VARIABLE"));
 
 UActorComponent::UActorComponent(const FObjectInitializer& ObjectInitializer /*= FObjectInitializer::Get()*/)
 	: Super(ObjectInitializer)

@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -28,9 +28,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Content Layout")
 	FVector2D InnerSlotPadding;
 
+	/** When this width is exceeded, elements will start appearing on the next line. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Content Layout", meta=(EditCondition = "bExplicitWrapWidth"))
+	float WrapWidth;
+
+	/** Use explicit wrap width whenever possible. It greatly simplifies layout calculations and reduces likelihood of "wiggling UI" */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Content Layout")
+	bool bExplicitWrapWidth;
+
 	/** Sets the inner slot padding goes between slots sharing borders */
 	UFUNCTION(BlueprintCallable, Category="Content Layout")
 	void SetInnerSlotPadding(FVector2D InPadding);
+
 
 public:
 

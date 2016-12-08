@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -109,6 +109,12 @@ public:
 
 	/** See InnerSlotPadding Attribute */
 	void SetInnerSlotPadding(FVector2D InInnerSlotPadding);
+
+	/** Set the width at which the wrap panel should wrap its content. */
+	void SetWrapWidth( const TAttribute<float>& InWrapWidth );
+
+	/** When true, use the WrapWidth property to determine where to wrap to the next line. */
+	void SetUseAllottedWidth(bool bInUseAllottedWidth);
 
 private:
 

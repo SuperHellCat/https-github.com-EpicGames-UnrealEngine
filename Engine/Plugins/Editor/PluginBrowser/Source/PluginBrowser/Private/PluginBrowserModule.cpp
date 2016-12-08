@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
 
 #include "PluginBrowserModule.h"
 #include "Textures/SlateIcon.h"
@@ -140,10 +140,16 @@ TSharedRef<SDockTab> FPluginBrowserModule::HandleSpawnPluginBrowserTab(const FSp
 
 TSharedRef<SDockTab> FPluginBrowserModule::HandleSpawnPluginCreatorTab(const FSpawnTabArgs& SpawnTabArgs)
 {
+	// Spawns the plugin creator tab with the default definition
+	return SpawnPluginCreatorTab(SpawnTabArgs, nullptr);
+}
+
+TSharedRef<SDockTab> FPluginBrowserModule::SpawnPluginCreatorTab(const FSpawnTabArgs& SpawnTabArgs, TSharedPtr<IPluginWizardDefinition> PluginWizardDefinition)
+{
 	TSharedRef<SDockTab> ResultTab = SNew(SDockTab)
 		.TabRole(ETabRole::NomadTab);
 
-	TSharedRef<SWidget> TabContentWidget = SNew(SNewPluginWizard, ResultTab);
+	TSharedRef<SWidget> TabContentWidget = SNew(SNewPluginWizard, ResultTab, PluginWizardDefinition);
 	ResultTab->SetContent(TabContentWidget);
 
 	return ResultTab;

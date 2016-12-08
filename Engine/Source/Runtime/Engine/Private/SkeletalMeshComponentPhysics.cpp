@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 #include "Misc/MessageDialog.h"
@@ -2256,7 +2256,7 @@ bool USkeletalMeshComponent::ComponentOverlapComponentImpl(class UPrimitiveCompo
 	//we do not support skeletal mesh vs skeletal mesh overlap test
 	if (PrimComp->IsA<USkeletalMeshComponent>())
 	{
-		UE_LOG(LogCollision, Log, TEXT("ComponentOverlapComponent : (%s) Does not support skeletalmesh with Physics Asset"), *PrimComp->GetPathName());
+		UE_LOG(LogCollision, Warning, TEXT("ComponentOverlapComponent : (%s) Does not support skeletalmesh with Physics Asset"), *PrimComp->GetPathName());
 		return false;
 	}
 

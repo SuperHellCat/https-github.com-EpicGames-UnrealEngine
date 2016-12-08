@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -309,7 +309,7 @@ public:
 	 *
 	 * @param V1 The first point.
 	 * @param V2 The second point.
-	 * @return The squared distance between two 2D points.
+	 * @return The distance between two 2D points.
 	 */
 	FORCEINLINE static float Distance(const FVector2D& V1, const FVector2D& V2);
 

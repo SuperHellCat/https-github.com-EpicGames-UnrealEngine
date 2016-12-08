@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
 
 #include "PhysicsEngine/BodyInstance.h"
 #include "EngineGlobals.h"
@@ -2331,9 +2331,9 @@ EScaleMode::Type ComputeScaleMode(const TArray<PxShape*>& PShapes)
 	return ScaleMode;
 }
 
-void FBodyInstance::SetMassOverride(float MassInKG)
+void FBodyInstance::SetMassOverride(float MassInKG, bool bNewOverrideMass)
 {
-	bOverrideMass = true;
+	bOverrideMass = bNewOverrideMass;
 	MassInKgOverride = MassInKG;
 }
 

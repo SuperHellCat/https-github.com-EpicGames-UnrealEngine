@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
 
 #include "OculusFunctionLibrary.h"
 #include "AsyncLoadingSplash.h"
@@ -6,6 +6,7 @@
 #include "EngineGlobals.h"
 
 #include "IOculusRiftPlugin.h"
+#include "OculusRiftHMD.h"
 
 #define GEARVR_SUPPORTED_PLATFORMS (PLATFORM_ANDROID && PLATFORM_ANDROID_ARM)
 
@@ -455,3 +456,4 @@ class IStereoLayers* UOculusFunctionLibrary::GetStereoLayers()
 #endif // OCULUS_SUPPORTED_PLATFORMS
 	return nullptr;
 }
+

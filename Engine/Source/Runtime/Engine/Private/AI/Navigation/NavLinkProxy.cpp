@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
 
 #include "AI/Navigation/NavLinkProxy.h"
 #include "UObject/ConstructorHelpers.h"
@@ -112,9 +112,9 @@ void ANavLinkProxy::PostEditChangeProperty(FPropertyChangedEvent& PropertyChange
 }
 #endif // WITH_EDITOR
 
-void ANavLinkProxy::PostInitializeComponents()
+void ANavLinkProxy::PostRegisterAllComponents()
 {
-	Super::PostInitializeComponents();
+	Super::PostRegisterAllComponents();
 
 	if (SmartLinkComp)
 	{

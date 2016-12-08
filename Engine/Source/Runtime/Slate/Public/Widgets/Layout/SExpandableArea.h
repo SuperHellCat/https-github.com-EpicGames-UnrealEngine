@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -99,6 +99,8 @@ public:
 	 * Instantly sets the expanded state of the area
 	 */
 	virtual void SetExpanded( bool bExpanded );
+
+	virtual void SetExpanded_Animated( bool bExpanded );
 
 protected:
 

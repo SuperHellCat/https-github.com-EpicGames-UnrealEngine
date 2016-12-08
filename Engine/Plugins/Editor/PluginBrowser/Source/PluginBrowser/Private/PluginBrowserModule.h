@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
 
 #pragma once 
 
@@ -63,6 +63,9 @@ public:
 
 	/** ID name for the plugin creator tab */
 	static const FName PluginCreatorTabName;
+
+	/** Spawns the plugin creator tab with a specific wizard definition */
+	virtual TSharedRef<SDockTab> SpawnPluginCreatorTab(const FSpawnTabArgs& SpawnTabArgs, TSharedPtr<IPluginWizardDefinition> PluginWizardDefinition) override;
 
 private:
 	/** Called to spawn the plugin browser tab */

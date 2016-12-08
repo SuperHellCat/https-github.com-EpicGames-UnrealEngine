@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
 
 /** 
  * ChartCreation
@@ -1182,6 +1182,7 @@ void FPerformanceTrackingSystem::StartCharting()
 	GTargetFrameRatesForSummary.Reset();
 	GTargetFrameRatesForSummary.Add(30);
 	GTargetFrameRatesForSummary.Add(60);
+	GTargetFrameRatesForSummary.Add(90);
 	GTargetFrameRatesForSummary.Add(120);
 
 	GGPUFrameTime = 0;

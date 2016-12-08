@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
 
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "EngineDefines.h"
@@ -9,7 +9,7 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogProjectileMovement, Log, All);
 
-const float UProjectileMovementComponent::MIN_TICK_TIME = 0.0002f;
+const float UProjectileMovementComponent::MIN_TICK_TIME = 1e-6f;
 
 UProjectileMovementComponent::UProjectileMovementComponent(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)

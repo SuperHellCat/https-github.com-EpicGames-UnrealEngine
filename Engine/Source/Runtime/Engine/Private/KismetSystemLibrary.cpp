@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
 
 #include "Kismet/KismetSystemLibrary.h"
 #include "HAL/IConsoleManager.h"
@@ -45,16 +45,6 @@ void UKismetSystemLibrary::StackTraceImpl(const FFrame& StackFrame)
 {
 	const FString Trace = StackFrame.GetStackTrace();
 	UE_LOG(LogBlueprintUserMessages, Log, TEXT("\n%s"), *Trace);
-}
-
-bool UKismetSystemLibrary::IsValid(const UObject* Object)
-{
-	return ::IsValid(Object);
-}
-
-bool UKismetSystemLibrary::IsValidClass(UClass* Class)
-{
-	return ::IsValid(Class);
 }
 
 FString UKismetSystemLibrary::GetObjectName(const UObject* Object)
@@ -163,41 +153,6 @@ FString UKismetSystemLibrary::GetUniqueDeviceId()
 FString UKismetSystemLibrary::GetDeviceId()
 {
 	return FPlatformMisc::GetDeviceId();
-}
-
-int32 UKismetSystemLibrary::MakeLiteralInt(int32 Value)
-{
-	return Value;
-}
-
-float UKismetSystemLibrary::MakeLiteralFloat(float Value)
-{
-	return Value;
-}
-
-bool UKismetSystemLibrary::MakeLiteralBool(bool Value)
-{
-	return Value;
-}
-
-FName UKismetSystemLibrary::MakeLiteralName(FName Value)
-{
-	return Value;
-}
-
-uint8 UKismetSystemLibrary::MakeLiteralByte(uint8 Value)
-{
-	return Value;
-}
-
-FString UKismetSystemLibrary::MakeLiteralString(const FString& Value)
-{
-	return Value;
-}
-
-FText UKismetSystemLibrary::MakeLiteralText(FText Value)
-{
-	return Value;
 }
 
 UObject* UKismetSystemLibrary::Conv_InterfaceToObject(const FScriptInterface& Interface)

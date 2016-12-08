@@ -1,4 +1,4 @@
-// Copyright 1998-2016 Epic Games, Inc. All Rights Reserved.
+// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
 
 #include "Sequencer.h"
 #include "Engine/EngineTypes.h"
@@ -5216,8 +5216,12 @@ FMovieSceneSpawnable* FSequencer::ConvertToSpawnableInternal(FGuid PossessableGu
 		for (int32 Index = 0; Index < MovieScene->GetPossessableCount(); ++Index)
 		{
 			FMovieScenePossessable& MovieScenePossessable = MovieScene->GetPossessable(Index);
-			MovieScenePossessable.SetParent(PersistentGuid);
-			Spawnable->AddChildPossessable(MovieScenePossessable.GetGuid());
+			bool bBelongsToNewSpawnable = MovieScenePossessable.GetParent() == PersistentGuid;
+			if (bBelongsToNewSpawnable)
+			{
+				MovieScenePossessable.SetParent(PersistentGuid);
+				Spawnable->AddChildPossessable(MovieScenePossessable.GetGuid());
+			}
 		}
 	}
 	
