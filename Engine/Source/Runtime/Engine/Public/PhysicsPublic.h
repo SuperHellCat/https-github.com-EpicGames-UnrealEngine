@@ -10,6 +10,7 @@
 #include "CoreMinimal.h"
 #include "Stats/Stats.h"
 #include "Engine/EngineTypes.h"
+#include "Engine/World.h"
 #include "Misc/CoreMisc.h"
 #include "EngineDefines.h"
 #include "RenderResource.h"
@@ -467,8 +468,14 @@ private:
 	};
 
 	FPendingConstraintData PendingConstraintData[PST_MAX];
-
+	
 public:
+
+	/** Whether or not the results of the simulation has updated yet. This can be important for trying to set the body transform or velocity (which is double buffered during simulation) */
+	bool IsPendingSimulationTransforms(uint32 SceneType) const
+	{
+		return PendingSimulationTransforms[SceneType];
+	}
 
 #if WITH_PHYSX
 	/** Static factory used to override the simulation event callback from other modules.
@@ -536,6 +543,13 @@ public:
 	/** @return Whether physics scene is using substepping */
 	bool IsSubstepping(uint32 SceneType) const
 	{
+		// Substepping relies on interpolating transforms over frames, but only game worlds will be ticked,
+		// so we disallow this feature in non-game worlds.
+		if( !GetOwningWorld()->IsGameWorld() )
+		{
+			return false;
+		}
+
 		if (SceneType == PST_Sync) return bSubstepping;
 		if (SceneType == PST_Async) return bSubsteppingAsync;
 		return false;
@@ -688,6 +702,9 @@ private:
 #endif
 
 	class FPhysSubstepTask * PhysSubSteppers[PST_MAX];
+
+	/** Indicates whether the physx scene is currently simulating*/
+	bool PendingSimulationTransforms[PST_MAX];
 
 #if WITH_APEX
 	TUniquePtr<struct FPendingApexDamageManager> PendingApexDamageManager;

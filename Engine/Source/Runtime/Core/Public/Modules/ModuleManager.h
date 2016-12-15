@@ -13,7 +13,6 @@
 #include "Delegates/Delegate.h"
 #include "Misc/Optional.h"
 #include "Misc/CoreMisc.h"
-#include "Misc/MultiReaderSingleWriterGT.h"
 #include "Modules/ModuleInterface.h"
 #include "Modules/Boilerplate/ModuleBoilerplate.h"
 
@@ -611,7 +610,7 @@ private:
 	TArray<FString> GameBinariesDirectories;
 
 	/** Critical section object controlling R/W access to Modules. */
-	mutable FMultiReaderSingleWriterGT ModulesCriticalSection;
+	mutable FCriticalSection ModulesCriticalSection;
 };
 
 /**
@@ -766,7 +765,7 @@ class FDefaultGameModuleImpl
  * DebugGame modules will be loaded by specifying the -debug parameter on the command-line.
  */
 #if IS_MONOLITHIC && UE_BUILD_DEVELOPMENT
-	#if UE_BUILD_DEVELOPMENT_WITH_DEBUGGAME
+	#if defined(UE_BUILD_DEVELOPMENT_WITH_DEBUGGAME) && UE_BUILD_DEVELOPMENT_WITH_DEBUGGAME
 		#define IMPLEMENT_DEBUGGAME() extern const bool GIsDebugGame = true;
 	#else
 		#define IMPLEMENT_DEBUGGAME() extern const bool GIsDebugGame = false;

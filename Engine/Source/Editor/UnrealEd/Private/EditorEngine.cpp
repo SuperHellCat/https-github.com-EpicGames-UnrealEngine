@@ -87,6 +87,7 @@
 #include "Engine/NetDriver.h"
 #include "Net/NetworkProfiler.h"
 #include "Interfaces/IPluginManager.h"
+#include "PackageReload.h"
 
 // needed for the RemotePropagator
 #include "AudioDevice.h"
@@ -107,7 +108,7 @@
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/KismetEditorUtilities.h"
 #include "Kismet2/KismetDebugUtilities.h"
-
+#include "Kismet2/KismetReinstanceUtilities.h"
 
 #include "AssetRegistryModule.h"
 #include "IContentBrowserSingleton.h"
@@ -168,6 +169,7 @@
 #include "Engine/LevelStreamingVolume.h"
 #include "Engine/LocalPlayer.h"
 #include "EngineStats.h"
+#include "Rendering/ColorVertexBuffer.h"
 
 #if !UE_BUILD_SHIPPING
 #include "Tests/AutomationCommon.h"
@@ -176,6 +178,7 @@
 #include "PhysicsPublic.h"
 #include "Engine/CoreSettings.h"
 #include "ShaderCompiler.h"
+#include "DistanceFieldAtlas.h"
 
 #include "PixelInspectorModule.h"
 
@@ -310,6 +313,7 @@ UEditorEngine::UEditorEngine(const FObjectInitializer& ObjectInitializer)
 	bDisableDeltaModification = false;
 	bPlayOnLocalPcSession = false;
 	bAllowMultiplePIEWorlds = true;
+	bIsEndingPlay = false;
 	NumOnlinePIEInstances = 0;
 	DefaultWorldFeatureLevel = GMaxRHIFeatureLevel;
 
@@ -618,6 +622,8 @@ void UEditorEngine::InitEditor(IEngineLoop* InEngineLoop)
 	FCoreUObjectDelegates::IsPackageOKToSaveDelegate.BindUObject(this, &UEditorEngine::IsPackageOKToSave);
 	FCoreUObjectDelegates::AutoPackageBackupDelegate.BindStatic(&FAutoPackageBackup::BackupPackage);
 
+	FCoreUObjectDelegates::OnPackageReloaded.AddUObject(this, &UEditorEngine::HandlePackageReloaded);
+
 	extern void SetupDistanceFieldBuildNotification();
 	SetupDistanceFieldBuildNotification();
 
@@ -640,6 +646,124 @@ void UEditorEngine::InitEditor(IEngineLoop* InEngineLoop)
 bool UEditorEngine::HandleOpenAsset(UObject* Asset)
 {
 	return FAssetEditorManager::Get().OpenEditorForAsset(Asset);
+}
+
+void UEditorEngine::HandlePackageReloaded(const EPackageReloadPhase InPackageReloadPhase, FPackageReloadedEvent* InPackageReloadedEvent)
+{
+	static TSet<UBlueprint*> BlueprintsToRecompileThisBatch;
+
+	if (InPackageReloadPhase == EPackageReloadPhase::PrePackageFixup)
+	{
+		NotifyToolsOfObjectReplacement(InPackageReloadedEvent->GetRepointedObjects());
+
+		// Notify any Blueprint assets that are about to be unloaded.
+		ForEachObjectWithOuter(InPackageReloadedEvent->GetOldPackage(), [&](UObject* InObject)
+		{
+			if (InObject->IsAsset())
+			{
+				// Notify about any BP assets that are about to be unloaded
+				if (UBlueprint* BP = Cast<UBlueprint>(InObject))
+				{
+					FKismetEditorUtilities::OnBlueprintUnloaded.Broadcast(BP);
+				}
+			}
+		}, false, RF_Transient, EInternalObjectFlags::PendingKill);
+	}
+
+	if (InPackageReloadPhase == EPackageReloadPhase::OnPackageFixup)
+	{
+		for (const auto& RepointedObjectPair : InPackageReloadedEvent->GetRepointedObjects())
+		{
+			UObject* OldObject = RepointedObjectPair.Key;
+			UObject* NewObject = RepointedObjectPair.Value;
+		
+			if (OldObject->IsAsset())
+			{
+				if (const UBlueprint* OldBlueprint = Cast<UBlueprint>(OldObject))
+				{
+					FBlueprintCompileReinstancer::ReplaceInstancesOfClass(OldBlueprint->GeneratedClass, NewObject ? CastChecked<UBlueprint>(NewObject)->GeneratedClass : nullptr);
+				}
+			}
+		}
+	}
+
+	if (InPackageReloadPhase == EPackageReloadPhase::PostPackageFixup)
+	{
+		for (TWeakObjectPtr<UObject> ObjectReferencer : InPackageReloadedEvent->GetObjectReferencers())
+		{
+			UObject* ObjectReferencerPtr = ObjectReferencer.Get();
+			if (!ObjectReferencerPtr)
+			{
+				continue;
+			}
+
+			FPropertyChangedEvent PropertyEvent(nullptr, EPropertyChangeType::Redirected);
+			ObjectReferencerPtr->PostEditChangeProperty(PropertyEvent);
+
+			// We need to recompile any Blueprints that had properties changed to make sure their generated class is up-to-date and has no lingering references to the old objects
+			UBlueprint* BlueprintToRecompile = nullptr;
+			if (UBlueprint* BlueprintReferencer = Cast<UBlueprint>(ObjectReferencerPtr))
+			{
+				BlueprintToRecompile = BlueprintReferencer;
+			}
+			else if (UClass* ClassReferencer = Cast<UClass>(ObjectReferencerPtr))
+			{
+				BlueprintToRecompile = Cast<UBlueprint>(ClassReferencer->ClassGeneratedBy);
+			}
+			else
+			{
+				BlueprintToRecompile = ObjectReferencerPtr->GetTypedOuter<UBlueprint>();
+			}
+			
+			if (BlueprintToRecompile)
+			{
+				BlueprintsToRecompileThisBatch.Add(BlueprintToRecompile);
+			}
+		}
+	}
+
+	if (InPackageReloadPhase == EPackageReloadPhase::PreBatch)
+	{
+		// If this fires then ReloadPackages has probably bee called recursively :(
+		check(BlueprintsToRecompileThisBatch.Num() == 0);
+
+		// Flush all pending render commands, as reloading the package may invalidate render resources.
+		FlushRenderingCommands();
+	}
+
+	if (InPackageReloadPhase == EPackageReloadPhase::PostBatchPreGC)
+	{
+		// Make sure we don't have any lingering transaction buffer references.
+		GEditor->Trans->Reset(NSLOCTEXT("UnrealEd", "ReloadedPackage", "Reloaded Package"));
+
+		// Recompile any BPs that had their references updated
+		if (BlueprintsToRecompileThisBatch.Num() > 0)
+		{
+			FScopedSlowTask CompilingBlueprintsSlowTask(BlueprintsToRecompileThisBatch.Num(), NSLOCTEXT("UnrealEd", "CompilingBlueprints", "Compiling Blueprints"));
+
+			for (UBlueprint* BlueprintToRecompile : BlueprintsToRecompileThisBatch)
+			{
+				CompilingBlueprintsSlowTask.EnterProgressFrame(1.0f);
+
+				//FBlueprintEditorUtils::MarkBlueprintAsModified(BlueprintToRecompile, FPropertyChangedEvent(nullptr, EPropertyChangeType::Redirected));
+				FKismetEditorUtilities::CompileBlueprint(BlueprintToRecompile, /*bIsRegeneratingOnLoad*/false, /*bSkipGarbageCollection*/true);
+			}
+		}
+		BlueprintsToRecompileThisBatch.Reset();
+	}
+
+	if (InPackageReloadPhase == EPackageReloadPhase::PostBatchPostGC)
+	{
+		// Tick some things that aren't processed while we're reloading packages and can result in excessive memory usage if not periodically updated.
+		if (GShaderCompilingManager)
+		{
+			GShaderCompilingManager->ProcessAsyncResults(true, false);
+		}
+		if (GDistanceFieldAsyncQueue)
+		{
+			GDistanceFieldAsyncQueue->ProcessAsyncTasks();
+		}
+	}
 }
 
 void UEditorEngine::HandleSettingChanged( FName Name )
@@ -854,19 +978,10 @@ void UEditorEngine::Init(IEngineLoop* InEngineLoop)
 	GLog->EnableBacklog( false );
 
 	{
-		// avoid doing this every time, create a list of classes that derive from AVolume
-		TArray<UClass*> VolumeClasses;
-		for (TObjectIterator<UClass> ObjectIt; ObjectIt; ++ObjectIt)
-		{
-			UClass* TestClass = *ObjectIt;
-			// we want classes derived from AVolume, but not AVolume itself
-			if ( TestClass->IsChildOf(AVolume::StaticClass()) && TestClass != AVolume::StaticClass() )
-			{
-				VolumeClasses.Add( TestClass );
-			}
-		}
-
 		FAssetData NoAssetData;
+
+		TArray<UClass*> VolumeClasses;
+		TArray<UClass*> VolumeFactoryClasses;
 
 		// Create array of ActorFactory instances.
 		for (TObjectIterator<UClass> ObjectIt; ObjectIt; ++ObjectIt)
@@ -877,17 +992,9 @@ void UEditorEngine::Init(IEngineLoop* InEngineLoop)
 				if (!TestClass->HasAnyClassFlags(CLASS_Abstract))
 				{
 					// if the factory is a volume shape factory we create an instance for all volume types
-					if ( TestClass->IsChildOf(UActorFactoryBoxVolume::StaticClass()) ||
-						 TestClass->IsChildOf(UActorFactorySphereVolume::StaticClass()) ||
-						 TestClass->IsChildOf(UActorFactoryCylinderVolume::StaticClass()) )
+					if (TestClass->IsChildOf(UActorFactoryVolume::StaticClass()))
 					{
-						for ( int32 i=0; i < VolumeClasses.Num(); i++ )
-						{
-							UActorFactory* NewFactory = NewObject<UActorFactory>(GetTransientPackage(), TestClass);
-							check(NewFactory);
-							NewFactory->NewActorClass = VolumeClasses[i];
-							ActorFactories.Add(NewFactory);
-						}
+						VolumeFactoryClasses.Add(TestClass);
 					}
 					else
 					{
@@ -897,7 +1004,26 @@ void UEditorEngine::Init(IEngineLoop* InEngineLoop)
 					}
 				}
 			}
+			else if (TestClass->IsChildOf(AVolume::StaticClass()) && TestClass != AVolume::StaticClass() )
+			{
+				// we want classes derived from AVolume, but not AVolume itself
+				VolumeClasses.Add( TestClass );
+			}
 		}
+
+		ActorFactories.Reserve(ActorFactories.Num() + (VolumeFactoryClasses.Num() * VolumeClasses.Num()));
+		for (UClass* VolumeFactoryClass : VolumeFactoryClasses)
+		{
+			for (UClass* VolumeClass : VolumeClasses)
+			{
+				UActorFactory* NewFactory = NewObject<UActorFactory>(GetTransientPackage(), VolumeFactoryClass);
+				check(NewFactory);
+				NewFactory->NewActorClass = VolumeClass;
+				ActorFactories.Add(NewFactory);
+			}
+		}
+
+		FCoreUObjectDelegates::RegisterHotReloadAddedClassesDelegate.AddUObject(this, &UEditorEngine::CreateVolumeFactoriesForNewClasses);
 	}
 
 	// Used for sorting ActorFactory classes.
@@ -949,6 +1075,36 @@ void UEditorEngine::Init(IEngineLoop* InEngineLoop)
 	bIsInitialized = true;
 };
 
+void UEditorEngine::CreateVolumeFactoriesForNewClasses(const TArray<UClass*>& NewClasses)
+{
+	TArray<UClass*> NewVolumeClasses;
+	for (UClass* NewClass : NewClasses)
+	{
+		if (NewClass && NewClass->IsChildOf(AVolume::StaticClass()))
+		{
+			NewVolumeClasses.Add(NewClass);
+		}
+	}
+
+	if (NewVolumeClasses.Num() > 0)
+	{
+		for (TObjectIterator<UClass> ObjectIt; ObjectIt; ++ObjectIt)
+		{
+			UClass* TestClass = *ObjectIt;
+			if (!TestClass->HasAnyClassFlags(CLASS_Abstract) && TestClass->IsChildOf(UActorFactoryVolume::StaticClass()))
+			{
+				ActorFactories.Reserve(ActorFactories.Num() + NewVolumeClasses.Num());
+				for (UClass* NewVolumeClass : NewVolumeClasses)
+				{
+					UActorFactory* NewFactory = NewObject<UActorFactory>(GetTransientPackage(), TestClass);
+					check(NewFactory);
+					NewFactory->NewActorClass = NewVolumeClass;
+					ActorFactories.Add(NewFactory);
+				}
+			}
+		}
+	}
+}
 
 void UEditorEngine::InitBuilderBrush( UWorld* InWorld )
 {
@@ -1399,6 +1555,12 @@ void UEditorEngine::Tick( float DeltaSeconds, bool bIdleMode )
 			UWorld* OldGWorld = NULL;
 			// Use the PlayWorld as the GWorld, because who knows what will happen in the Tick.
 			OldGWorld = SetPlayInEditorWorld( PlayWorld );
+
+			// Transfer debug references to ensure debugging ref's are valid for this tick in case of multiple game instances.
+			if (OldGWorld && OldGWorld != PlayWorld)
+			{
+				OldGWorld->TransferBlueprintDebugReferences(PlayWorld);
+			}
 
 			// Tick all travel and Pending NetGames (Seamless, server, client)
 			TickWorldTravel(PieContext, DeltaSeconds);
@@ -6258,23 +6420,11 @@ void UEditorEngine::UpdateAutoLoadProject()
 #if PLATFORM_MAC
 	if ( !GIsBuildMachine )
 	{
-		FString OSVersion, OSSubVersion;
-		FPlatformMisc::GetOSVersions(OSVersion, OSSubVersion);
-		
-		TArray<FString> Components;
-		OSVersion.ParseIntoArray(Components, TEXT("."), true);
-		uint8 ComponentValues[3] = {0};
-		
-		for(uint32 i = 0; i < Components.Num() && i < 3; i++)
-		{
-			TTypeFromString<uint8>::FromString(ComponentValues[i], *Components[i]);
-		}
-		
-		if(ComponentValues[0] < 10 || ComponentValues[1] < 12 || (ComponentValues[1] == 12 && ComponentValues[2] < 0))
+		if(FPlatformMisc::MacOSXVersionCompare(10,12,2) < 0)
 		{
 			if(FSlateApplication::IsInitialized())
 			{
-				FSuppressableWarningDialog::FSetupInfo Info( LOCTEXT("UpdateMacOSX_Body","Please update to the latest version of Mac OS X for best performance."), LOCTEXT("UpdateMacOSX_Title","Update Mac OS X"), TEXT("UpdateMacOSX"), GEditorSettingsIni );
+				FSuppressableWarningDialog::FSetupInfo Info( LOCTEXT("UpdateMacOSX_Body","Please update to the latest version of macOS for best performance."), LOCTEXT("UpdateMacOSX_Title","Update macOS"), TEXT("UpdateMacOSX"), GEditorSettingsIni );
 				Info.ConfirmText = LOCTEXT( "OK", "OK");
 				Info.bDefaultToSuppressInTheFuture = true;
 				FSuppressableWarningDialog OSUpdateWarning( Info );
@@ -6282,7 +6432,7 @@ void UEditorEngine::UpdateAutoLoadProject()
 			}
 			else
 			{
-				UE_LOG(LogEditor, Warning, TEXT("Please update to the latest version of Mac OS X for best performance."));
+				UE_LOG(LogEditor, Warning, TEXT("Please update to the latest version of macOS for best performance."));
 			}
 		}
 		

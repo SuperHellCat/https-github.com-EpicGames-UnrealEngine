@@ -576,9 +576,14 @@ public:
 	TSharedPtr< FUICommandInfo > FeatureLevelPreview[ERHIFeatureLevel::Num];
 	
 	TSharedPtr< FUICommandInfo > PreviewPlatformOverride_DefaultES2;
-	TSharedPtr< FUICommandInfo > PreviewPlatformOverride_AndroidES2;
-	TSharedPtr< FUICommandInfo > PreviewPlatformOverride_IOSES2;
+	TSharedPtr< FUICommandInfo > PreviewPlatformOverride_AndroidGLES2;
+	TSharedPtr< FUICommandInfo > PreviewPlatformOverride_IOSGLES2;
 
+	TSharedPtr< FUICommandInfo > PreviewPlatformOverride_DefaultES31;
+	TSharedPtr< FUICommandInfo > PreviewPlatformOverride_AndroidGLES31;
+	TSharedPtr< FUICommandInfo > PreviewPlatformOverride_AndroidVulkanES31;
+	TSharedPtr< FUICommandInfo > PreviewPlatformOverride_IOSMetalES31;
+	
 	///**
 	// * Mode Commands                   
 	// */
@@ -607,6 +612,9 @@ public:
 	TSharedPtr< FUICommandInfo > SelectActorsInLayers;
 
 	TSharedPtr< FUICommandInfo > FocusAllViewportsToSelection;
+
+        // Open merge actor command
+	TSharedPtr< FUICommandInfo > OpenMergeActor;
 };
 
 /**
@@ -770,8 +778,8 @@ public:
 	static void AttachToSocketSelection(FName SocketName, AActor* ParentActorPtr);
 	static void SetMaterialQualityLevel( EMaterialQualityLevel::Type NewQualityLevel );
 	static bool IsMaterialQualityLevelChecked( EMaterialQualityLevel::Type TestQualityLevel );
-	static void SetPreviewPlatform(FName MaterialQualityPlatform);
-	static bool IsPreviewPlatformChecked(FName MaterialQualityPlatform);
+	static void SetPreviewPlatform(FName MaterialQualityPlatform,ERHIFeatureLevel::Type PreviewFeatureLevel);
+	static bool IsPreviewPlatformChecked(FName MaterialQualityPlatform, ERHIFeatureLevel::Type PreviewFeatureLevel);
 	static void SetFeatureLevelPreview(ERHIFeatureLevel::Type InFeatureLevel);
 	static bool IsFeatureLevelPreviewChecked(ERHIFeatureLevel::Type InFeatureLevel);
 	
@@ -1263,6 +1271,10 @@ public:
 	 *	@return true if it can execute.
 	 */
 	static bool ActorSelected_CanExecute();
+
+
+	/** Called when 'Open Merge Actor' is clicked */
+	static void OpenMergeActor_Clicked();
 
 private:
 	/** 

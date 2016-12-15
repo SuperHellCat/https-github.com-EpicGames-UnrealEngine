@@ -1089,7 +1089,7 @@ bool UObject::CallFunctionByNameWithArguments(const TCHAR* Str, FOutputDevice& A
 			// we need to use the whole remaining string as an argument, regardless of quotes, spaces etc.
 			if (PropertyParam == LastParameter && PropertyParam->IsA<UStrProperty>() && FCString::Strcmp(Str, TEXT("")) != 0)
 			{
-				ArgStr = RemainingStr;
+				ArgStr = FString(RemainingStr).Trim();
 			}
 
 			const TCHAR* Result = It->ImportText(*ArgStr, It->ContainerPtrToValuePtr<uint8>(Parms), ExportFlags, NULL );
@@ -2614,6 +2614,57 @@ void UObject::execSetArray( FFrame& Stack, RESULT_DECL )
  	P_FINISH;
 }
 IMPLEMENT_VM_FUNCTION( EX_SetArray, execSetArray );
+
+void UObject::execSetSet( FFrame& Stack, RESULT_DECL )
+{
+	// Get the set address
+	Stack.MostRecentPropertyAddress = NULL;
+	Stack.MostRecentProperty = NULL;
+	Stack.Step( Stack.Object, NULL ); // Set to set
+	int32 Num = Stack.ReadInt<int32>();
+
+	USetProperty* SetProperty = CastChecked<USetProperty>(Stack.MostRecentProperty);
+ 	FScriptSetHelper SetHelper(SetProperty, Stack.MostRecentPropertyAddress);
+ 	SetHelper.EmptyElements(Num);
+ 
+ 	// Read in the parameters one at a time
+ 	int32 i = 0;
+ 	while(*Stack.Code != EX_EndSet)
+ 	{
+ 		SetHelper.AddUninitializedValue();
+ 		Stack.Step(Stack.Object, SetHelper.GetElementPtr(i++));
+ 	}
+	SetHelper.Rehash();
+ 
+ 	P_FINISH;
+}
+IMPLEMENT_VM_FUNCTION( EX_SetSet, execSetSet );
+
+void UObject::execSetMap( FFrame& Stack, RESULT_DECL )
+{
+	// Get the map address
+	Stack.MostRecentPropertyAddress = NULL;
+	Stack.MostRecentProperty = NULL;
+	Stack.Step( Stack.Object, NULL ); // Map to set
+	int32 Num = Stack.ReadInt<int32>();
+	
+	UMapProperty* MapProperty = CastChecked<UMapProperty>(Stack.MostRecentProperty);
+ 	FScriptMapHelper MapHelper(MapProperty, Stack.MostRecentPropertyAddress);
+ 	MapHelper.EmptyValues(Num);
+ 
+ 	// Read in the parameters one at a time
+ 	int32 i = 0;
+ 	while(*Stack.Code != EX_EndMap)
+ 	{
+ 		MapHelper.AddUninitializedValue();
+ 		Stack.Step(Stack.Object, MapHelper.GetKeyPtr(i));
+ 		Stack.Step(Stack.Object, MapHelper.GetValuePtr(i++));
+ 	}
+	MapHelper.Rehash();
+ 
+ 	P_FINISH;
+}
+IMPLEMENT_VM_FUNCTION( EX_SetMap, execSetMap );
 
 void UObject::execArrayConst(FFrame& Stack, RESULT_DECL)
 {

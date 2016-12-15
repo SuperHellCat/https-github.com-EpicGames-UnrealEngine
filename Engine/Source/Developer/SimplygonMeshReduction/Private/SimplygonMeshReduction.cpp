@@ -28,12 +28,6 @@ static const char* USER_MATERIAL_CHANNEL_METALLIC = "UserMetallic";
 static const char* USER_MATERIAL_CHANNEL_ROUGHNESS = "UserRoughness";
 static const char* USER_MATERIAL_CHANNEL_SPECULAR = "UserSpecular";
 
-//@third party code BEGIN SIMPLYGON
-#define USE_USER_OPACITY_CHANNEL 1
-#if USE_USER_OPACITY_CHANNEL
-static const char* USER_MATERIAL_CHANNEL_OPACITY = "UserOpacity";
-#endif
-//@third party code END SIMPLYGON
 static const TCHAR* SG_UE_INTEGRATION_REV = TEXT("@305");
 
 #ifdef __clang__
@@ -1687,6 +1681,8 @@ private:
 				for( uint32 TexCoordIndex = 0; TexCoordIndex < TexCoordCount; ++TexCoordIndex )
 				{
 					FVector2D TexCoord = Vertex.UVs[TexCoordIndex];
+					TexCoord.X = FMath::Clamp(TexCoord.X, -1024.0f, 1024.0f);
+					TexCoord.Y = FMath::Clamp(TexCoord.Y, -1024.0f, 1024.0f);
 					TexCoords[TexCoordIndex]->SetTuple( Index, (float*)&TexCoord );
 				}
 

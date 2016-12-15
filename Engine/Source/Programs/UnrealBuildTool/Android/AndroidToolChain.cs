@@ -175,7 +175,7 @@ namespace UnrealBuildTool
 		public void ParseArchitectures()
 		{
 			// look in ini settings for what platforms to compile for
-			ConfigCacheIni Ini = ConfigCacheIni.CreateConfigCacheIni(UnrealTargetPlatform.Android, "Engine", DirectoryReference.FromFile(ProjectFile));
+			ConfigHierarchy Ini = ConfigCache.ReadHierarchy(ConfigHierarchyType.Engine, DirectoryReference.FromFile(ProjectFile), UnrealTargetPlatform.Android);
 			Arches = new List<string>();
 			bool bBuild = true;
 			if (Ini.GetBool("/Script/AndroidRuntimeSettings.AndroidRuntimeSettings", "bBuildForArmV7", out bBuild) && bBuild
@@ -227,7 +227,7 @@ namespace UnrealBuildTool
 							 select Arch + GPUArch).ToList();
 		}
 
-		static public string GetGLESVersionFromGPUArch(string GPUArch)
+		static public string GetGLESVersionFromGPUArch(string GPUArch, bool bES30Minimum)
 		{
 			GPUArch = GPUArch.Substring(1); // drop the '-' from the start
 			string GLESversion = "";
@@ -242,6 +242,10 @@ namespace UnrealBuildTool
 				default:
 					GLESversion = "0x00020000";
 					break;
+			}
+			if (bES30Minimum && (GLESversion[6] < '3'))
+			{
+				GLESversion = "0x00030000";
 			}
 
 			return GLESversion;
@@ -293,7 +297,7 @@ namespace UnrealBuildTool
 		public string GetNdkApiLevel()
 		{
 			// ask the .ini system for what version to use
-			ConfigCacheIni Ini = ConfigCacheIni.CreateConfigCacheIni(UnrealTargetPlatform.Android, "Engine", DirectoryReference.FromFile(ProjectFile));
+			ConfigHierarchy Ini = ConfigCache.ReadHierarchy(ConfigHierarchyType.Engine, DirectoryReference.FromFile(ProjectFile), UnrealTargetPlatform.Android);
 			string NDKLevel;
 			Ini.GetString("/Script/AndroidPlatformEditor.AndroidSDKSettings", "NDKAPILevel", out NDKLevel);
 
@@ -379,9 +383,14 @@ namespace UnrealBuildTool
 			Result += " -Wno-invalid-offsetof";			// needed to suppress warnings about using offsetof on non-POD types.
 			Result += " -Wno-logical-op-parentheses";	// needed for external headers we can't change
 
-			if (CompileEnvironment.Config.bEnableShadowVariableWarning)
+			if (CompileEnvironment.Config.bEnableShadowVariableWarnings)
 			{
 				Result += " -Wshadow -Wno-error=shadow";
+			}
+
+			if (CompileEnvironment.Config.bEnableUndefinedIdentifierWarnings)
+			{
+				Result += " -Wundef" + (BuildConfiguration.bUndefinedIdentifierErrors ? "" : " -Wno-error=undef");
 			}
 
 			// new for clang4.5 warnings:
@@ -532,7 +541,7 @@ namespace UnrealBuildTool
 			string Result = "";
 
 			Result += " -x c++";
-			Result += " -std=c++11";
+			Result += " -std=c++14";
 
 			// optimization level
 			if (bDisableOptimizations)
@@ -571,7 +580,7 @@ namespace UnrealBuildTool
 			string Result = "";
 
 			Result += " -x c++-header";
-			Result += " -std=c++11";
+			Result += " -std=c++14";
 
 			// optimization level
 			if (bDisableOptimizations)
@@ -811,6 +820,8 @@ namespace UnrealBuildTool
 			}
 
 			var Result = new List<string>();
+			Result.Add("#include \"CoreTypes.h\"");
+			Result.Add("");
 			foreach (string Arch in Arches)
 			{
 				switch (Arch)

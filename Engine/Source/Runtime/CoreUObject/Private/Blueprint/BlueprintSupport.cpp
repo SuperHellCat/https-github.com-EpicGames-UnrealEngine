@@ -1750,9 +1750,7 @@ void FLinkerLoad::CreateDynamicTypeLoader()
 		OuterImport->ObjectName = Import.ObjectRef.PackageName;
 
 		if ((Import.ObjectRef.ClassName == DynamicClassName) 
-#if USE_EVENT_DRIVEN_ASYNC_LOAD
-			&& GIsInitialLoad
-#endif 
+			&& (!GEventDrivenLoaderEnabled || !EVENT_DRIVEN_ASYNC_LOAD_ACTIVE_AT_RUNTIME)
 			&& (Import.ObjectRef.ClassPackageName == DynamicClassPackageName))
 		{
 			const FString DynamicClassPath = Import.ObjectRef.PackageName.ToString() + TEXT(".") + Import.ObjectRef.ObjectName.ToString();
@@ -1762,8 +1760,10 @@ void FLinkerLoad::CreateDynamicTypeLoader()
 			{
 				// The class object is created here. The class is not fully constructed yet (no CLASS_Constructed flag), ZConstructor will do that later.
 				// The class object is needed to resolve circular dependencies. Regular native classes use deferred initialization/registration to avoid them.
-				ObjectImport->XObject = ClassConstructFn->StaticClassFn();
-				OuterImport->XObject = ObjectImport->XObject->GetOutermost();
+
+				ClassConstructFn->StaticClassFn();
+
+				//We don't fill the ObjectImport->XObject and OuterImport->XObject, because the class still must be created as export.
 			}
 		}
 	}
@@ -1780,8 +1780,8 @@ void FLinkerLoad::CreateDynamicTypeLoader()
 		DynamicTypeExport->ObjectFlags |= RF_Public;
 	}
 
-#if USE_EVENT_DRIVEN_ASYNC_LOAD
-
+	if (GEventDrivenLoaderEnabled)
+	{
 	const FString DynamicTypePath = GetExportPathName(DynamicTypeExportIndex);
 	const FName DynamicTypeClassName = GetDynamicTypeClassName(*DynamicTypePath);
 	ensure(DynamicTypeClassName != NAME_None);
@@ -1891,11 +1891,9 @@ void FLinkerLoad::CreateDynamicTypeLoader()
 			HandleDependencyTypeForExport(EDependencyType::CreateBeforeCreate);
 		}
 	}
-#endif
+	}
 
-#if !USE_EVENT_DRIVEN_ASYNC_LOAD
 	LinkerRoot->SetPackageFlags(LinkerRoot->GetPackageFlags() | PKG_CompiledIn);
-#endif
 }
 
 /*******************************************************************************
@@ -2244,11 +2242,16 @@ FConvertedBlueprintsDependencies& FConvertedBlueprintsDependencies::Get()
 	return ConvertedBlueprintsDependencies;
 }
 
-void FConvertedBlueprintsDependencies::RegisterClass(FName PackageName, GetDependenciesNamesFunc GetAssets)
+void FConvertedBlueprintsDependencies::RegisterConvertedClass(FName PackageName, GetDependenciesNamesFunc GetAssets)
 {
 	check(!PackageNameToGetter.Contains(PackageName));
 	ensure(GetAssets);
 	PackageNameToGetter.Add(PackageName, GetAssets);
+}
+
+static bool IsBlueprintDependencyDataNull(const FBlueprintDependencyData& Dependency)
+{
+	return Dependency.ObjectRef.ObjectName == NAME_None;
 }
 
 void FConvertedBlueprintsDependencies::GetAssets(FName PackageName, TArray<FBlueprintDependencyData>& OutDependencies) const
@@ -2259,6 +2262,7 @@ void FConvertedBlueprintsDependencies::GetAssets(FName PackageName, TArray<FBlue
 	if (Func)
 	{
 		Func(OutDependencies);
+		OutDependencies.RemoveAll(IsBlueprintDependencyDataNull);
 	}
 }
 
@@ -2270,8 +2274,7 @@ void FConvertedBlueprintsDependencies::FillUsedAssetsInDynamicClass(UDynamicClas
 	TArray<FBlueprintDependencyData> UsedAssetdData;
 	GetUsedAssets(UsedAssetdData);
 
-#if USE_EVENT_DRIVEN_ASYNC_LOAD
-	if (!GIsInitialLoad)
+	if (GEventDrivenLoaderEnabled && EVENT_DRIVEN_ASYNC_LOAD_ACTIVE_AT_RUNTIME)
 	{
 		FLinkerLoad* Linker = DynamicClass->GetOutermost()->LinkerLoad;
 		if (Linker)
@@ -2279,25 +2282,38 @@ void FConvertedBlueprintsDependencies::FillUsedAssetsInDynamicClass(UDynamicClas
 			int32 ImportIndex = 0;
 			for (FBlueprintDependencyData& ItData : UsedAssetdData)
 			{
-				FObjectImport& Import = Linker->Imp(FPackageIndex::FromImport(ImportIndex));
-				check(Import.ObjectName == ItData.ObjectRef.ObjectName);
-				UObject* TheAsset = Import.XObject;
-				UE_CLOG(!TheAsset, LogBlueprintSupport, Error, TEXT("Could not find UDynamicClass dependent asset (EDL) %s in %s"), *ItData.ObjectRef.ObjectName.ToString(), *ItData.ObjectRef.PackageName.ToString());
-				DynamicClass->UsedAssets.Add(TheAsset);
-				ImportIndex += 2;
+				if (!IsBlueprintDependencyDataNull(ItData))
+				{
+					FObjectImport& Import = Linker->Imp(FPackageIndex::FromImport(ImportIndex));
+					check(Import.ObjectName == ItData.ObjectRef.ObjectName);
+					UObject* TheAsset = Import.XObject;
+					UE_CLOG(!TheAsset, LogBlueprintSupport, Error, TEXT("Could not find UDynamicClass dependent asset (EDL) %s in %s"), *ItData.ObjectRef.ObjectName.ToString(), *ItData.ObjectRef.PackageName.ToString());
+					DynamicClass->UsedAssets.Add(TheAsset);
+					ImportIndex += 2;
+				}
+				else
+				{
+					DynamicClass->UsedAssets.Add(nullptr);
+				}
 			}
 			return;
 		}
 		check(0);
 	}
-#endif
 
 	for (FBlueprintDependencyData& ItData : UsedAssetdData)
 	{
-		const FString PathToObj = FString::Printf(TEXT("%s.%s"), *ItData.ObjectRef.PackageName.ToString(), *ItData.ObjectRef.ObjectName.ToString());
-		UObject* TheAsset = LoadObject<UObject>(nullptr, *PathToObj);
-		UE_CLOG(!TheAsset, LogBlueprintSupport, Error, TEXT("Could not find UDynamicClass dependent asset (non-EDL) %s in %s"), *ItData.ObjectRef.ObjectName.ToString(), *ItData.ObjectRef.PackageName.ToString());
-		DynamicClass->UsedAssets.Add(TheAsset);
+		if (ItData.ObjectRef.ObjectName != NAME_None)
+		{
+			const FString PathToObj = FString::Printf(TEXT("%s.%s"), *ItData.ObjectRef.PackageName.ToString(), *ItData.ObjectRef.ObjectName.ToString());
+			UObject* TheAsset = LoadObject<UObject>(nullptr, *PathToObj);
+			UE_CLOG(!TheAsset, LogBlueprintSupport, Error, TEXT("Could not find UDynamicClass dependent asset (non-EDL) %s in %s"), *ItData.ObjectRef.ObjectName.ToString(), *ItData.ObjectRef.PackageName.ToString());
+			DynamicClass->UsedAssets.Add(TheAsset);
+		}
+		else
+		{
+			DynamicClass->UsedAssets.Add(nullptr);
+		}
 	}
 }
 

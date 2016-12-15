@@ -3551,6 +3551,7 @@ static FSystemValue PixelSystemValueTable[] =
 	{ "SV_RenderTargetArrayIndex", glsl_type::int_type, "gl_Layer", ir_var_in, false, false, false, false },
 	{ "SV_Target0", glsl_type::half4_type, "gl_FragColor", ir_var_out, false, false, false, true },
 	{ "SV_ViewID", glsl_type::uint_type, "gl_ViewID_OVR", ir_var_in, false, false, false, true }, // Mobile multi-view support
+	{ "SV_SampleIndex", glsl_type::uint_type, "gl_SampleID", ir_var_in, false, false, false, false }, // Mobile multi-view support
 	{ NULL, NULL, NULL, ir_var_auto, false, false, false }
 };
 
@@ -3631,7 +3632,7 @@ static void ConfigureInOutVariableLayout(EHlslShaderFrequency Frequency,
 		}
 		else
 		{
-#if DEBUG
+#ifdef DEBUG
 	#define _mesh_glsl_report _mesa_glsl_warning
 #else
 	#define _mesh_glsl_report _mesa_glsl_error
@@ -5403,7 +5404,7 @@ void FGlslLanguageSpec::SetupLanguageIntrinsics(_mesa_glsl_parse_state* State, e
 {
 	if (bIsES2)
 	{
-		make_intrinsic_genType(ir, State, FRAMEBUFFER_FETCH_ES2, ir_invalid_opcode, IR_INTRINSIC_FLOAT, 0, 4, 4);
+		make_intrinsic_genType(ir, State, FRAMEBUFFER_FETCH_ES2, ir_invalid_opcode, IR_INTRINSIC_ALL_FLOATING, 0, 4, 4);
 		make_intrinsic_genType(ir, State, DEPTHBUFFER_FETCH_ES2, ir_invalid_opcode, IR_INTRINSIC_ALL_FLOATING, 3, 1, 1);
 		make_intrinsic_genType(ir, State, GET_HDR_32BPP_HDR_ENCODE_MODE_ES2, ir_invalid_opcode, IR_INTRINSIC_ALL_FLOATING, 0);
 	}

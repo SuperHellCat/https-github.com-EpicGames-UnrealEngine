@@ -126,10 +126,11 @@ public:
 			FConsoleManager& ConsoleManager = (FConsoleManager&)IConsoleManager::Get();
 			FString CVarName = ConsoleManager.FindConsoleObjectName(this);
 
-			const FString Message = FString::Printf(TEXT("Setting the console variable '%s' with 'SetBy%s' was ignored as it is lower priority than the previous 'SetBy%s'"),
+			const FString Message = FString::Printf(TEXT("Setting the console variable '%s' with 'SetBy%s' was ignored as it is lower priority than the previous 'SetBy%s'. Value remains '%s'"),
 				CVarName.IsEmpty() ? TEXT("unknown?") : *CVarName,
 				GetSetByTCHAR((EConsoleVariableFlags)NewPri),
-				GetSetByTCHAR((EConsoleVariableFlags)OldPri)
+				GetSetByTCHAR((EConsoleVariableFlags)OldPri),
+				*GetString()
 				);
 
 			// If it was set by an ini that has to be hand edited, it is not an issue if a lower priority system tried and failed to set it afterwards
@@ -1796,6 +1797,25 @@ static TAutoConsoleVariable<int32> CVarMobileEnableStaticAndCSMShadowReceivers(
 	TEXT("1: Primitives can receive both CSM and static shadowing from stationary lights. (default)"),
 	ECVF_RenderThreadSafe | ECVF_ReadOnly);
 
+static TAutoConsoleVariable<int32> CVarAllReceiveDynamicCSM(
+	TEXT("r.AllReceiveDynamicCSM"),
+	1,
+	TEXT("Which primitives should receive dynamic-only CSM shadows. 0: Only primitives marked bReceiveCSMFromDynamicObjects. 1: All primitives (default)"));
+
+static TAutoConsoleVariable<int32> CVarMobileAllowDistanceFieldShadows(
+	TEXT("r.Mobile.AllowDistanceFieldShadows"),
+	1,
+	TEXT("0: Do not generate shader permutations to render distance field shadows from stationary directional lights.\n")
+	TEXT("1: Generate shader permutations to render distance field shadows from stationary directional lights. (default)"),
+	ECVF_RenderThreadSafe | ECVF_ReadOnly);
+
+static TAutoConsoleVariable<int32> CVarMobileAllowMovableDirectionalLights(
+	TEXT("r.Mobile.AllowMovableDirectionalLights"),
+	1,
+	TEXT("0: Do not generate shader permutations to render movable directional lights.\n")
+	TEXT("1: Generate shader permutations to render movable directional lights. (default)"),
+	ECVF_RenderThreadSafe | ECVF_ReadOnly);
+
 static TAutoConsoleVariable<int32> CVarMobileHDR32bppMode(
 	TEXT("r.MobileHDR32bppMode"),
 	0,
@@ -1908,6 +1928,14 @@ static TAutoConsoleVariable<int32> CVarSceneColorFormat(
 	TEXT(" 5: PF_A32B32G32R32F 128Bit (unreasonable but good for testing)"),
 	ECVF_Scalability | ECVF_RenderThreadSafe);
 
+static TAutoConsoleVariable<int32> CVarPostProcessingColorFormat(
+	TEXT("r.PostProcessingColorFormat"),
+	0,
+	TEXT("Defines the memory layout (RGBA) used for most of the post processing chain buffers.\n")
+	TEXT(" 0: Default\n")
+	TEXT(" 1: Force PF_A32B32G32R32F 128Bit (unreasonable but good for testing)"),
+	ECVF_Scalability | ECVF_RenderThreadSafe);
+
 static TAutoConsoleVariable<int32> CVarDepthOfFieldQuality(
 	TEXT("r.DepthOfFieldQuality"),
 	2,
@@ -1940,7 +1968,7 @@ static TAutoConsoleVariable<int32> CVarHighResScreenshotDelay(
 	TEXT("r.HighResScreenshotDelay"),
 	4,
 	TEXT("When high-res screenshots are requested there is a small delay to allow temporal effects to converge.\n")
-	TEXT("Default: 4."),
+	TEXT("Default: 4. Using a value below the default will disable TemporalAA for improved image quality."),
 	ECVF_Default);
 
 static TAutoConsoleVariable<int32> CVarMaterialQualityLevel(
@@ -2224,12 +2252,12 @@ static TAutoConsoleVariable<int32> CVarDetailMode(
 
 static TAutoConsoleVariable<int32> CVarDBuffer(
 	TEXT("r.DBuffer"),
-	0,
+	1,
 	TEXT("Enables DBuffer decal material blend modes.\n")
 	TEXT("DBuffer decals are rendered before the base pass, allowing them to affect static lighting and skylighting correctly. \n")
 	TEXT("When enabled, a full prepass will be forced which adds CPU / GPU cost.  Several texture lookups will be done in the base pass to fetch the decal properties, which adds pixel work.\n")
 	TEXT(" 0: off\n")
-	TEXT(" 1: on"),
+	TEXT(" 1: on (default)"),
 	ECVF_RenderThreadSafe | ECVF_ReadOnly);
 
 static TAutoConsoleVariable<float> CVarSkeletalMeshLODRadiusScale(

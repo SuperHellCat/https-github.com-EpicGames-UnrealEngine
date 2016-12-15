@@ -20,6 +20,7 @@ enum class EControllerHand : uint8
 	Right,
 	Pad,
 	ExternalCamera,
+	Gun,
 	Special_1,
 	Special_2,
 	Special_3,
@@ -473,6 +474,10 @@ struct INPUTCORE_API EKeys
 	static const FKey Android_Volume_Up;
 	static const FKey Android_Volume_Down;
 	static const FKey Android_Menu;
+
+	// Virtual buttons that use other buttons depending on the platform
+	static const FKey Virtual_Accept;
+	static const FKey Virtual_Back;
 
 	static const FKey Invalid;
 

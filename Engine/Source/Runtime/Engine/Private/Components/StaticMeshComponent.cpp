@@ -32,6 +32,7 @@
 #include "Engine/StaticMeshSocket.h"
 #include "AI/NavigationSystemHelpers.h"
 #include "AI/NavigationOctree.h"
+#include "AI/Navigation/NavigationSystem.h"
 #include "PhysicsEngine/BodySetup.h"
 #include "EngineGlobals.h"
 #include "ComponentRecreateRenderStateContext.h"
@@ -156,6 +157,14 @@ public:
 	TArray<FVertexColorLODData> VertexColorLODs;
 
 	FLightMapInstanceData CachedStaticLighting;
+
+	/** Texture streaming build data */
+	TArray<FStreamingTextureBuildInfo> StreamingTextureData;
+
+#if WITH_EDITORONLY_DATA
+	/** Texture streaming editor data (for viewmodes) */
+	TArray<uint32> MaterialStreamingRelativeBoxes;
+#endif
 };
 
 UStaticMeshComponent::UStaticMeshComponent(const FObjectInitializer& ObjectInitializer)
@@ -187,6 +196,7 @@ UStaticMeshComponent::UStaticMeshComponent(const FObjectInitializer& ObjectIniti
 	SelectedEditorSection = INDEX_NONE;
 	SectionIndexPreview = INDEX_NONE;
 	StaticMeshImportVersion = BeforeImportStaticMeshVersionWasAdded;
+	bCustomOverrideVertexColorPerLOD = false;
 #endif
 }
 
@@ -609,6 +619,22 @@ void UStaticMeshComponent::OnUnregister()
 	RemoveSpeedTreeWind();
 
 	Super::OnUnregister();
+}
+
+void UStaticMeshComponent::OnCreatePhysicsState()
+{
+	Super::OnCreatePhysicsState();
+
+	bNavigationRelevant = IsNavigationRelevant();
+	UNavigationSystem::UpdateComponentInNavOctree(*this);
+}
+
+void UStaticMeshComponent::OnDestroyPhysicsState()
+{
+	Super::OnDestroyPhysicsState();
+
+	UNavigationSystem::UpdateComponentInNavOctree(*this);
+	bNavigationRelevant = IsNavigationRelevant();
 }
 
 #if WITH_EDITORONLY_DATA
@@ -1182,61 +1208,78 @@ void UStaticMeshComponent::PrivateFixupOverrideColors()
 
 	// Initialize override vertex colors on any new LODs which have just been created
 	SetLODDataCount(NumLODs, LODData.Num());
-
+	bool UpdateStaticMeshDeriveDataKey = false;
 	FStaticMeshComponentLODInfo& LOD0Info = LODData[0];
-	if (LOD0Info.OverrideVertexColors)
+	if (!bCustomOverrideVertexColorPerLOD && LOD0Info.OverrideVertexColors == nullptr)
 	{
-		for (uint32 LODIndex = 0; LODIndex < NumLODs; ++LODIndex)
+		return;
+	}
+
+	for (uint32 LODIndex = 0; LODIndex < NumLODs; ++LODIndex)
+	{
+		FStaticMeshComponentLODInfo& LODInfo = LODData[LODIndex];
+		if (LODInfo.OverrideVertexColors == nullptr)
 		{
-			FStaticMeshComponentLODInfo& LODInfo = LODData[LODIndex];
-
-			if (LODInfo.OverrideVertexColors == nullptr)
-			{
-				LODInfo.OverrideVertexColors = new FColorVertexBuffer;
-			}
-			else
-			{
-				LODInfo.BeginReleaseOverrideVertexColors();
-				FlushRenderingCommands();
-			}
-
-			FStaticMeshLODResources& CurRenderData = GetStaticMesh()->RenderData->LODResources[LODIndex];
-
-			TArray<FColor> NewOverrideColors;
-
-			if (LOD0Info.PaintedVertices.Num() > 0)
-			{
-				// Build override colors for LOD, based on LOD0
-				RemapPaintedVertexColors(
-					LOD0Info.PaintedVertices,
-					*LOD0Info.OverrideVertexColors,
-					CurRenderData.PositionVertexBuffer,
-					&CurRenderData.VertexBuffer,
-					NewOverrideColors
-					);
-			}
-
-			if (NewOverrideColors.Num())
-			{
-				LODInfo.OverrideVertexColors->InitFromColorArray(NewOverrideColors);
-
-				// Update the PaintedVertices array
-				const int32 NumVerts = CurRenderData.GetNumVertices();
-				check(NumVerts == NewOverrideColors.Num());
-
-				LODInfo.PaintedVertices.Reserve(NumVerts);
-				for (int32 VertIndex = 0; VertIndex < NumVerts; ++VertIndex)
-				{
-					FPaintedVertex* Vertex = new(LODInfo.PaintedVertices) FPaintedVertex;
-					Vertex->Position = CurRenderData.PositionVertexBuffer.VertexPosition(VertIndex);
-					Vertex->Normal = CurRenderData.VertexBuffer.VertexTangentZ(VertIndex);
-					Vertex->Color = LODInfo.OverrideVertexColors->VertexColor(VertIndex);
-				}
-			}
-
-			BeginInitResource(LODInfo.OverrideVertexColors);
+			if (bCustomOverrideVertexColorPerLOD) //No fixup required if the component is in custom LOD paint and there is no paint on a LOD
+				continue;
+			LODInfo.OverrideVertexColors = new FColorVertexBuffer;
+		}
+		else
+		{
+			LODInfo.BeginReleaseOverrideVertexColors();
+			FlushRenderingCommands();
 		}
 
+
+		FStaticMeshLODResources& CurRenderData = GetStaticMesh()->RenderData->LODResources[LODIndex];
+		TArray<FColor> NewOverrideColors;
+		if (bCustomOverrideVertexColorPerLOD)
+		{
+			//Since in custom we fix paint only if the component has some, the PaintedVertices should be allocate
+			check(LODInfo.PaintedVertices.Num() > 0);
+			//Use the existing LOD custom paint and remap it on the new mesh
+			RemapPaintedVertexColors(
+				LODInfo.PaintedVertices,
+				*LODInfo.OverrideVertexColors,
+				CurRenderData.PositionVertexBuffer,
+				&CurRenderData.VertexBuffer,
+				NewOverrideColors
+				);
+		}
+		else if(LOD0Info.PaintedVertices.Num() > 0)
+		{
+			RemapPaintedVertexColors(
+				LOD0Info.PaintedVertices,
+				*LOD0Info.OverrideVertexColors,
+				CurRenderData.PositionVertexBuffer,
+				&CurRenderData.VertexBuffer,
+				NewOverrideColors
+				);
+		}
+		if (NewOverrideColors.Num())
+		{
+			LODInfo.OverrideVertexColors->InitFromColorArray(NewOverrideColors);
+
+			// Update the PaintedVertices array
+			const int32 NumVerts = CurRenderData.GetNumVertices();
+			check(NumVerts == NewOverrideColors.Num());
+
+			LODInfo.PaintedVertices.Reserve(NumVerts);
+			for (int32 VertIndex = 0; VertIndex < NumVerts; ++VertIndex)
+			{
+				FPaintedVertex* Vertex = new(LODInfo.PaintedVertices) FPaintedVertex;
+				Vertex->Position = CurRenderData.PositionVertexBuffer.VertexPosition(VertIndex);
+				Vertex->Normal = CurRenderData.VertexBuffer.VertexTangentZ(VertIndex);
+				Vertex->Color = LODInfo.OverrideVertexColors->VertexColor(VertIndex);
+			}
+		}
+
+		BeginInitResource(LODInfo.OverrideVertexColors);
+		UpdateStaticMeshDeriveDataKey = true;
+	}
+
+	if (UpdateStaticMeshDeriveDataKey)
+	{
 		StaticMeshDerivedDataKey = GetStaticMesh()->RenderData->DerivedDataKey;
 	}
 
@@ -1479,9 +1522,15 @@ void UStaticMeshComponent::PostEditChangeProperty(FPropertyChangedEvent& Propert
 
 			// If the staticmesh changed, then the component needs a texture streaming rebuild.
 			StreamingTextureData.Empty();
+			
+			if (OverrideMaterials.Num())
+			{
+				// Static mesh was switched so we should empty out the override materials
+				OverrideMaterials.Empty(GetStaticMesh() ? GetStaticMesh()->StaticMaterials.Num() : 0);
+			}
 		}
 
-		if (PropertyThatChanged->GetName() == TEXT("overridematerials"))
+		if (PropertyThatChanged->GetFName() == GET_MEMBER_NAME_CHECKED(UStaticMeshComponent, OverrideMaterials))
 		{
 			// If the owning actor is part of a cluster flag it as dirty
 			IHierarchicalLODUtilitiesModule& Module = FModuleManager::LoadModuleChecked<IHierarchicalLODUtilitiesModule>("HierarchicalLODUtilities");
@@ -2036,15 +2085,21 @@ FActorComponentInstanceData* UStaticMeshComponent::GetComponentInstanceData() co
 {
 	FStaticMeshComponentInstanceData* StaticMeshInstanceData = nullptr;
 
-		StaticMeshInstanceData = new FStaticMeshComponentInstanceData(this);
+	StaticMeshInstanceData = new FStaticMeshComponentInstanceData(this);
 
-		// Fill in info
-		StaticMeshInstanceData->CachedStaticLighting.Transform = ComponentToWorld;
+	// Fill in info
+	StaticMeshInstanceData->CachedStaticLighting.Transform = ComponentToWorld;
 
-		for (const FStaticMeshComponentLODInfo& LODDataEntry : LODData)
-		{
+	for (const FStaticMeshComponentLODInfo& LODDataEntry : LODData)
+	{
 		StaticMeshInstanceData->CachedStaticLighting.MapBuildDataIds.Add(LODDataEntry.MapBuildDataId);
-		}
+	}
+
+	// Backup the texture streaming data.
+	StaticMeshInstanceData->StreamingTextureData = StreamingTextureData;
+#if WITH_EDITORONLY_DATA
+	StaticMeshInstanceData->MaterialStreamingRelativeBoxes = MaterialStreamingRelativeBoxes;
+#endif
 
 	// Cache instance vertex colors
 	for( int32 LODIndex = 0; LODIndex < LODData.Num(); ++LODIndex )
@@ -2105,6 +2160,12 @@ void UStaticMeshComponent::ApplyComponentInstanceData(FStaticMeshComponentInstan
 		FComponentReregisterContext ReregisterStaticMesh(this);
 		StaticMeshInstanceData->ApplyVertexColorData(this);
 	}
+
+	// Restore the texture streaming data.
+	StreamingTextureData = StaticMeshInstanceData->StreamingTextureData;
+#if WITH_EDITORONLY_DATA
+	MaterialStreamingRelativeBoxes = StaticMeshInstanceData->MaterialStreamingRelativeBoxes;
+#endif
 }
 
 bool UStaticMeshComponent::DoCustomNavigableGeometryExport(FNavigableGeometryExport& GeomExport) const
@@ -2142,7 +2203,7 @@ bool UStaticMeshComponent::DoCustomNavigableGeometryExport(FNavigableGeometryExp
 
 bool UStaticMeshComponent::IsNavigationRelevant() const
 {
-	return GetStaticMesh() != nullptr && Super::IsNavigationRelevant();
+	return GetStaticMesh() != nullptr && GetStaticMesh()->GetNavCollision() != nullptr && Super::IsNavigationRelevant();
 }
 
 void UStaticMeshComponent::GetNavigationData(FNavigationRelevantData& Data) const

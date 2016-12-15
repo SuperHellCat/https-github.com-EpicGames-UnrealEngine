@@ -6,6 +6,7 @@
 #include "Modules/ModuleInterface.h"
 #include "Modules/ModuleManager.h"
 #include "KismetCompiledFunctionContext.h"
+#include "Engine/Blueprint.h" // for FCompilerNativizationOptions
 
 class UUserDefinedEnum;
 class UUserDefinedStruct;
@@ -13,8 +14,8 @@ class UUserDefinedStruct;
 class IBlueprintCompilerCppBackend
 {
 public:
-	virtual FString GenerateCodeFromClass(UClass* SourceClass, TIndirectArray<FKismetFunctionContext>& Functions, bool bGenerateStubsOnly, FString& OutCppBody) = 0;
-	virtual FString GenerateCodeFromEnum(UUserDefinedEnum* SourceEnum) = 0;
+	virtual FString GenerateCodeFromClass(UClass* SourceClass, TIndirectArray<FKismetFunctionContext>& Functions, bool bGenerateStubsOnly, FCompilerNativizationOptions NativizationOptions, FString& OutCppBody) = 0;
+	virtual void GenerateCodeFromEnum(UUserDefinedEnum* SourceEnum, FString& OutHeaderCode, FString& OutCPPCode) = 0;
 	virtual FString GenerateCodeFromStruct(UUserDefinedStruct* SourceStruct) = 0;
 
 	// Generate a wrapper class, that helps accessing non-native properties and calling non-native functions

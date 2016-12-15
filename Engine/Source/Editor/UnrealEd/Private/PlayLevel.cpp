@@ -149,6 +149,13 @@ public:
 
 void UEditorEngine::EndPlayMap()
 {
+	if ( bIsEndingPlay )
+	{
+		return;
+	}
+
+	TGuardValue<bool> GuardIsEndingPlay(bIsEndingPlay, true);
+
 	FlushAsyncLoading();
 
 	// Monitoring when PIE corrupts references between the World and the PIE generated World for UE-20486
@@ -411,6 +418,15 @@ void UEditorEngine::EndPlayMap()
 				{
 					CastChecked<UWorld>(Level->GetOuter())->MarkObjectsPendingKill();
 				}
+			}
+		}
+
+		for (ULevelStreaming* LevelStreaming : World->StreamingLevels)
+		{
+			// If an unloaded levelstreaming still has a loaded level we need to mark its objects to be deleted as well
+			if ((!LevelStreaming->bShouldBeLoaded || !LevelStreaming->bShouldBeVisible) && LevelStreaming->GetLoadedLevel())
+			{
+				CastChecked<UWorld>(LevelStreaming->GetLoadedLevel()->GetOuter())->MarkObjectsPendingKill();
 			}
 		}
 	}
@@ -1816,10 +1832,8 @@ struct FInternalPlayLevelUtils
 					/*bAddInstrumentation =*/false);
 
 				// Check for errors after compiling
-				for (auto CompiledIt = CompiledBlueprints.CreateIterator(); CompiledIt; ++CompiledIt)
+				for (UBlueprint* CompiledBlueprint : CompiledBlueprints)
 				{
-					UBlueprint* CompiledBlueprint = *CompiledIt;
-
 					if (CompiledBlueprint != Blueprint)
 					{
 						int32 ExistingIndex = InNeedOfRecompile.Find(CompiledBlueprint);
@@ -1957,7 +1971,7 @@ void UEditorEngine::PlayUsingLauncher()
 		ELauncherProfileCookModes::Type CurrentLauncherCookMode = ELauncherProfileCookModes::ByTheBook;
 		bool bCanCookByTheBookInEditor = true;
 		bool bCanCookOnTheFlyInEditor = true;
-		for ( const auto &PlatformName : LauncherProfile->GetCookedPlatforms() )
+		for ( const FString& PlatformName : LauncherProfile->GetCookedPlatforms() )
 		{
 			if ( CanCookByTheBookInEditor(PlatformName) == false )
 			{
@@ -2069,7 +2083,7 @@ void UEditorEngine::PlayUsingLauncher()
 		if ( LauncherProfile->GetCookMode() == ELauncherProfileCookModes::ByTheBookInEditor )
 		{
 			TArray<ITargetPlatform*> TargetPlatforms;
-			for ( const auto &PlatformName : LauncherProfile->GetCookedPlatforms() )
+			for ( const FString& PlatformName : LauncherProfile->GetCookedPlatforms() )
 			{
 				ITargetPlatform* TargetPlatform = GetTargetPlatformManager()->FindTargetPlatform(PlatformName);
 				// todo pass in all the target platforms instead of just the single platform
@@ -2360,7 +2374,7 @@ void UEditorEngine::PlayInEditor( UWorld* InWorld, bool bInSimulateInEditor )
 	if (ErroredBlueprints.Num() && !GIsDemoMode)
 	{
 		FString ErroredBlueprintList;
-		for (auto Blueprint : ErroredBlueprints)
+		for (UBlueprint* Blueprint : ErroredBlueprints)
 		{
 			ErroredBlueprintList += FString::Printf(TEXT("\n   %s"), *Blueprint->GetName());
 		}
@@ -2383,7 +2397,7 @@ void UEditorEngine::PlayInEditor( UWorld* InWorld, bool bInSimulateInEditor )
 		else
 		{
 			// The user wants to ignore the compiler errors, mark the Blueprints and do not warn them again unless the Blueprint attempts to compile
-			for (auto Blueprint : ErroredBlueprints)
+			for (UBlueprint* Blueprint : ErroredBlueprints)
 			{
 				Blueprint->bDisplayCompilePIEWarning = false;
 			}
@@ -3477,9 +3491,8 @@ FViewport* UEditorEngine::GetPIEViewport()
 	}
 	else
 	{
-		for (auto It = WorldList.CreateIterator(); It; ++It)
+		for (const FWorldContext& WorldContext : WorldList)
 		{
-			FWorldContext &WorldContext = *It;
 			if (WorldContext.WorldType == EWorldType::PIE)
 			{
 				// We can't use FindChecked here because when using the dedicated server option we don't initialize this map 
@@ -3503,9 +3516,8 @@ void UEditorEngine::ToggleBetweenPIEandSIE( bool bNewSession )
 	// The first PIE world context is the one that can toggle between PIE and SIE
 	// Network PIE/SIE toggling is not really meant to be supported.
 	FSlatePlayInEditorInfo * SlateInfoPtr = nullptr;
-	for (auto It = WorldList.CreateIterator(); It && !SlateInfoPtr; ++It)
+	for (const FWorldContext& WorldContext : WorldList)
 	{
-		FWorldContext &WorldContext = *It;
 		if (WorldContext.WorldType == EWorldType::PIE && !WorldContext.RunAsDedicated)
 		{
 			SlateInfoPtr = SlatePlayInEditorMap.Find(WorldContext.ContextHandle);
@@ -3704,7 +3716,7 @@ bool UEditorEngine::PackageUsingExternalObjects( ULevel* LevelToCheck, bool bAdd
 	return bFoundExternal;
 }
 
-UWorld* UEditorEngine::CreatePIEWorldBySavingToTemp(FWorldContext &WorldContext, UWorld* InWorld, FString &PlayWorldMapName)
+UWorld* UEditorEngine::CreatePIEWorldBySavingToTemp(FWorldContext& WorldContext, UWorld* InWorld, FString &PlayWorldMapName)
 {
 	double StartTime = FPlatformTime::Seconds();
 	UWorld * LoadedWorld = NULL;
@@ -3797,13 +3809,12 @@ UWorld* UEditorEngine::CreatePIEWorldByDuplication(FWorldContext &WorldContext, 
 		// Prepare string asset references for fixup
 		TArray<FString> PackageNamesBeingDuplicatedForPIE;
 		PackageNamesBeingDuplicatedForPIE.Add(PlayWorldMapName);
-		for ( auto LevelIt = InWorld->StreamingLevels.CreateConstIterator(); LevelIt; ++LevelIt )
+		for (ULevelStreaming* StreamingLevel : InWorld->StreamingLevels)
 		{
-			ULevelStreaming* StreamingLevel = *LevelIt;
 			if ( StreamingLevel )
 			{
-				const FString StreamingLevelPIEName = UWorld::ConvertToPIEPackageName(StreamingLevel->GetWorldAssetPackageName(), WorldContext.PIEInstance);
-				PackageNamesBeingDuplicatedForPIE.Add(StreamingLevelPIEName);
+				FString StreamingLevelPIEName = UWorld::ConvertToPIEPackageName(StreamingLevel->GetWorldAssetPackageName(), WorldContext.PIEInstance);
+				PackageNamesBeingDuplicatedForPIE.Add(MoveTemp(StreamingLevelPIEName));
 			}
 		}
 

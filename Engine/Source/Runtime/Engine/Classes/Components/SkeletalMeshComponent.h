@@ -569,6 +569,8 @@ public:
 
 	void CreateBodySetup();
 
+	virtual void SendRenderDebugPhysics() override;
+
 	/**
 	 * Misc 
 	 */
@@ -610,6 +612,15 @@ public:
 	/** If true, line checks will test against the bounding box of this skeletal mesh component and return a hit if there is a collision. */
 	UPROPERTY()
 	uint32 bEnableLineCheckWithBounds:1;
+
+protected:
+#if WITH_EDITORONLY_DATA
+	/** If true, this will Tick until disabled */
+	UPROPERTY(AdvancedDisplay, EditInstanceOnly, transient, Category = SkeletalMesh)
+	uint32 bUpdateAnimationInEditor : 1;
+#endif
+
+public:
 
 	/** Cache AnimCurveUidVersion from Skeleton and this will be used to identify if it needs to be updated */
 	UPROPERTY(transient)
@@ -790,6 +801,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Components|SkeletalMesh")
 	void ForceClothNextUpdateTeleportAndReset();
 
+	/** Stops simulating clothing, but does not show clothing ref pose. Keeps the last known simulation state */
+	UFUNCTION(BlueprintCallable, Category="Components|SkeletalMesh")
+	void SuspendClothingSimulation();
+
+	/** Resumes a previously suspended clothing simulation, teleporting the clothing on the next tick */
+	UFUNCTION(BlueprintCallable, Category = "Components|SkeletalMesh")
+	void ResumeClothingSimulation();
+
+	/** Gets whether or not the clothing simulation is currently suspended */
+	UFUNCTION(BlueprintCallable, Category = "Components|SkeletalMesh")
+	bool IsClothingSimulationSuspended();
+
 	/**
 	 * Reset the teleport mode of a next update to 'Continuous'
 	 */
@@ -815,6 +838,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Components|SkeletalMesh", meta=(UnsafeDuringActorConstruction="true"))
 	void UnbindClothFromMasterPoseComponent(bool bRestoreSimulationSpace = true);
 
+	/**
+	* Sets whether or not to force tick component in order to update animation and refresh transform for this component
+	* This is supported only in the editor
+	*/
+	UFUNCTION(BlueprintCallable, Category = "Components|SkeletalMesh", meta = (DevelopmentOnly, UnsafeDuringActorConstruction = "true"))
+	void SetUpdateAnimationInEditor(const bool NewUpdateState);
+
 	/** We detach the Component once we are done playing it.
 	 *
 	 * @param	ParticleSystemComponent that finished
@@ -839,6 +869,11 @@ public:
 	*/
 	virtual void ClearAnimNotifyErrors(UObject* InSourceNotify){}
 #endif
+
+protected:
+
+	/** Whether the clothing simulation is suspended (not the same as disabled, we no longer run the sim but keep the last valid sim data around) */
+	bool bClothingSimulationSuspended;
 
 public:
 	/** Temporary array of bone indices required this frame. Filled in by UpdateSkelPose. */
@@ -903,8 +938,6 @@ private:
 
 	/** Copies the data from the external cloth simulation context. We copy instead of flipping because the API has to return the full struct to make backwards compat easy*/
 	void UpdateClothSimulationContext();
-
-
 
    /** 
 	* clothing actors will be created from clothing assets for cloth simulation 
@@ -1315,6 +1348,9 @@ public:
 	/** Utility which returns total mass of all bones below the supplied one in the hierarchy (including this one). */
 	float GetTotalMassBelowBone(FName InBoneName);
 
+	/** Set the collision object type on the skeletal mesh */
+	virtual void SetCollisionObjectType(ECollisionChannel Channel) override;
+
 	/** Set the movement channel of all bodies */
 	void SetAllBodiesCollisionObjectType(ECollisionChannel NewChannel);
 
@@ -1633,15 +1669,20 @@ public:
 	/** Apply animation curves to this component */
 	void ApplyAnimationCurvesToComponent(const TMap<FName, float>* InMaterialParameterCurves, const TMap<FName, float>* InAnimationMorphCurves);
 	
+protected:
+
+	// Returns whether we need to run the Cloth Tick or not
+	virtual bool ShouldRunClothTick() const;
+
+	// Returns whether we're able to run a simulation (ignoring the suspend flag)
+	bool CanSimulateClothing() const;
+
 private:
 	/** Override USkinnedMeshComponent */
 	virtual void AddSlavePoseComponent(USkinnedMeshComponent* SkinnedMeshComponent) override;
 
 	// Returns whether we need to run the Pre Cloth Tick or not
 	bool ShouldRunEndPhysicsTick() const;
-
-	// Returns whether we need to run the Cloth Tick or not
-	bool ShouldRunClothTick() const;
 
 	// Handles registering/unregistering the pre cloth tick as it is needed
 	void UpdateEndPhysicsTickRegisteredState();

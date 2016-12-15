@@ -479,9 +479,11 @@ static TSimpleElementPixelShader* GetPixelShader(bool bEncoded, ESimpleElementBl
 	return *TShaderMapRef<TSimpleElementPixelShader>(GetGlobalShaderMap(FeatureLevel));
 }
 
-static bool Is32BppHDREncoded(const FSceneView* View)
+static bool Is32BppHDREncoded(const FSceneView* View, ERHIFeatureLevel::Type FeatureLevel)
 {
-	if (View == nullptr || View->GetFeatureLevel() >= ERHIFeatureLevel::SM4)
+	// If the view has no view family then it wont be using encoding.
+	// Do not use the view's feature level, if it does not have a scene it will be invalid.
+	if (View == nullptr || FeatureLevel >= ERHIFeatureLevel::ES3_1 || View->Family == nullptr)
 	{
 		return false;
 	}
@@ -529,7 +531,7 @@ void FBatchedElements::PrepareShaders(
 	FMatrix ColorWeights( FPlane(1, 0, 0, 0), FPlane(0, 1, 0, 0), FPlane(0, 0, 1, 0), FPlane(0, 0, 0, 0) );
 
 	// bEncodedHDR requires that blend states are disabled.
-	bool bEncodedHDR = bEnableHDREncoding && Is32BppHDREncoded(View);
+	bool bEncodedHDR = bEnableHDREncoding && Is32BppHDREncoded(View, FeatureLevel);
 
 	float GammaToUse = Gamma;
 
@@ -701,18 +703,18 @@ void FBatchedElements::PrepareShaders(
 
 				if (FMath::Abs(Gamma - 1.0f) < KINDA_SMALL_NUMBER)
 				{
-					TShaderMapRef<FSimpleElementAlphaOnlyPS> AlphaOnlyPixelShader(GetGlobalShaderMap(FeatureLevel));
+					auto* AlphaOnlyPixelShader = GetPixelShader<FSimpleElementAlphaOnlyPS>(bEncodedHDR, BlendMode, FeatureLevel);
 					SetGlobalBoundShaderState(RHICmdList, FeatureLevel, AlphaOnlyShaderState.GetBSS(bEncodedHDR, BlendMode), GSimpleElementVertexDeclaration.VertexDeclarationRHI,
-						*VertexShader, *AlphaOnlyPixelShader);
+						*VertexShader, AlphaOnlyPixelShader);
 
 					AlphaOnlyPixelShader->SetParameters(RHICmdList, Texture);
 					AlphaOnlyPixelShader->SetEditorCompositingParameters(RHICmdList, View, DepthTexture);
 				}
 				else
 				{
-					TShaderMapRef<FSimpleElementGammaAlphaOnlyPS> GammaAlphaOnlyPixelShader(GetGlobalShaderMap(FeatureLevel));
+					auto* GammaAlphaOnlyPixelShader = GetPixelShader<FSimpleElementGammaAlphaOnlyPS>(bEncodedHDR, BlendMode, FeatureLevel);
 					SetGlobalBoundShaderState(RHICmdList, FeatureLevel, GammaAlphaOnlyShaderState.GetBSS(bEncodedHDR, BlendMode), GSimpleElementVertexDeclaration.VertexDeclarationRHI,
-						*VertexShader, *GammaAlphaOnlyPixelShader);
+						*VertexShader, GammaAlphaOnlyPixelShader);
 
 					GammaAlphaOnlyPixelShader->SetParameters(RHICmdList, Texture, Gamma, BlendMode);
 					GammaAlphaOnlyPixelShader->SetEditorCompositingParameters(RHICmdList, View, DepthTexture);
@@ -773,7 +775,7 @@ void FBatchedElements::PrepareShaders(
 
 
 //@todo.VC10: Apparent VC10 compiler bug here causes an access violation when drawing Point arrays (TTP 213844), this occurred in the next two methods
-#if _MSC_VER
+#ifdef _MSC_VER
 PRAGMA_DISABLE_OPTIMIZATION
 #endif
 
@@ -1173,7 +1175,7 @@ bool FBatchedElements::Draw(FRHICommandList& RHICmdList, ERHIFeatureLevel::Type 
 	}
 }
 
-#if _MSC_VER
+#ifdef _MSC_VER
 PRAGMA_ENABLE_OPTIMIZATION
 #endif
 

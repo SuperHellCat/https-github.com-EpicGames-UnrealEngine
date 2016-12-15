@@ -81,6 +81,16 @@ void FMaterialEditorUtilities::DeleteSelectedNodes(const class UEdGraph* Graph)
 	}
 }
 
+
+void FMaterialEditorUtilities::DeleteNodes(const class UEdGraph* Graph, const TArray<UEdGraphNode*>& NodesToDelete)
+{
+	TSharedPtr<class IMaterialEditor> MaterialEditor = GetIMaterialEditorForObject(Graph);
+	if (MaterialEditor.IsValid())
+	{
+		MaterialEditor->DeleteNodes(NodesToDelete);
+	}
+}
+
 FText FMaterialEditorUtilities::GetOriginalObjectName(const class UEdGraph* Graph)
 {
 	TSharedPtr<class IMaterialEditor> MaterialEditor = GetIMaterialEditorForObject(Graph);
@@ -579,13 +589,20 @@ void FMaterialEditorUtilities::AddMaterialExpressionCategory(FGraphActionMenuBui
 		{
 			if (!ActionMenuBuilder.FromPin || HasCompatibleConnection(MaterialExpression.MaterialClass, FromPinType, ActionMenuBuilder.FromPin->Direction, bMaterialFunction))
 			{
+				FString CreationName = MaterialExpression.Name;
 				FFormatNamedArguments Arguments;
 				Arguments.Add(TEXT("Name"), FText::FromString( *MaterialExpression.Name ));
-				const FText ToolTip = FText::Format( LOCTEXT( "NewMaterialExpressionTooltip", "Adds a {Name} node here" ), Arguments );
+				FString ToolTip = FText::Format(LOCTEXT("NewMaterialExpressionTooltip", "Adds a {Name} node here"), Arguments).ToString();
+				if (MaterialExpression.CreationDescription.Len() != 0)
+					ToolTip = MaterialExpression.CreationDescription;
+				if (MaterialExpression.CreationName.Len() != 0)
+					CreationName = MaterialExpression.CreationName;
+
+
 				TSharedPtr<FMaterialGraphSchemaAction_NewNode> NewNodeAction(new FMaterialGraphSchemaAction_NewNode(
 					CategoryName,
-					FText::FromString(MaterialExpression.Name),
-					ToolTip.ToString(), 0, CastChecked<UMaterialExpression>(MaterialExpression.MaterialClass->GetDefaultObject())->GetKeywords()));
+					FText::FromString(CreationName),
+					ToolTip, 0, CastChecked<UMaterialExpression>(MaterialExpression.MaterialClass->GetDefaultObject())->GetKeywords()));
 				NewNodeAction->MaterialExpressionClass = MaterialExpression.MaterialClass;
 				ActionMenuBuilder.AddAction(NewNodeAction);
 			}
@@ -656,30 +673,37 @@ void FMaterialEditorUtilities::BuildTextureStreamingData(UMaterialInterface* Upd
 		CollectGarbage( GARBAGE_COLLECTION_KEEPFLAGS );
 
 		FScopedSlowTask SlowTask(2.f, (LOCTEXT("MaterialEditorUtilities_UpdatingTextureStreamingData", "Updating Texture Streaming Data")));
+		SlowTask.MakeDialog(true);
 
 		TSet<UMaterialInterface*> Materials;
 		Materials.Add(UpdatedMaterial);
+
+		// Clear the build data.
+		const TArray<FMaterialTextureInfo> EmptyTextureStreamingData;
 
 		// Here we also update the parents as we just want to save the delta between the hierarchy.
 		// Since the instance may only override partially the parent params, we try to find what the child has overridden.
 		UMaterialInstance* MaterialInstance = Cast<UMaterialInstance>(UpdatedMaterial);
 		while (MaterialInstance)
 		{
+			// Clear the data in case the build is canceled.
+			MaterialInstance->SetTextureStreamingData(EmptyTextureStreamingData);
 			Materials.Add(MaterialInstance);
 			MaterialInstance = Cast<UMaterialInstance>(MaterialInstance->Parent);
 		};
 
 		// Here we need a full rebuild since the shader changed. Although don't wait for previous shaders to fasten the process.
-		CompileDebugViewModeShaders(DVSM_OutputMaterialTextureScales, QualityLevel, FeatureLevel, true, false, Materials, SlowTask);
-
-		FMaterialUtilities::FExportErrorManager ExportErrors(FeatureLevel);
-		for (UMaterialInterface* MaterialInterface : Materials)
+		if (CompileDebugViewModeShaders(DVSM_OutputMaterialTextureScales, QualityLevel, FeatureLevel, true, false, Materials, SlowTask))
 		{
-			FMaterialUtilities::ExportMaterialUVDensities(MaterialInterface, QualityLevel, FeatureLevel, ExportErrors);
-		}
-		ExportErrors.OutputToLog();
+			FMaterialUtilities::FExportErrorManager ExportErrors(FeatureLevel);
+			for (UMaterialInterface* MaterialInterface : Materials)
+			{
+				FMaterialUtilities::ExportMaterialUVDensities(MaterialInterface, QualityLevel, FeatureLevel, ExportErrors);
+			}
+			ExportErrors.OutputToLog();
 
-		CollectGarbage( GARBAGE_COLLECTION_KEEPFLAGS );
+			CollectGarbage( GARBAGE_COLLECTION_KEEPFLAGS );
+		}
 	}
 }
 

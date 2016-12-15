@@ -186,6 +186,8 @@
 DEFINE_LOG_CATEGORY(LogEngine);
 IMPLEMENT_MODULE( FEngineModule, Engine );
 
+#define DEBUGGING_VIEWPORT_SIZES 0
+
 #define LOCTEXT_NAMESPACE "UnrealEngine"
 
 void OnChangeEngineCVarRequiringRecreateRenderState(IConsoleVariable* Var)
@@ -1423,6 +1425,11 @@ void UEngine::ParseCommandline()
 		bUseSound = false;
 	}
 
+	if (FParse::Param(FCommandLine::Get(), TEXT("enablesound")))
+	{
+		bUseSound = true;
+	}
+
 	if( FParse::Param( FCommandLine::Get(), TEXT("noailogging")) )
 	{
 		bDisableAILogging = true;
@@ -1925,10 +1932,7 @@ bool UEngine::InitializeAudioDeviceManager()
 			FString AudioDeviceModuleName;
 			if (bForceAudioMixer)
 			{
-			 	// Only implemented windows for now
-#if PLATFORM_WINDOWS
-				AudioDeviceModuleName = TEXT("AudioMixerXAudio2");
-#endif
+				GConfig->GetString(TEXT("Audio"), TEXT("AudioMixerModuleName"), AudioDeviceModuleName, GEngineIni);
 			}
 
 			// get the module name from the ini file
@@ -1982,6 +1986,7 @@ class FFakeStereoRenderingDevice : public IStereoRendering
 public:
 	FFakeStereoRenderingDevice() 
 	: FOVInDegrees(100)
+	, MonoCullingDistance(0.0f)
 	, Width(640)
 	, Height(480)
 	{
@@ -2014,7 +2019,7 @@ public:
 	virtual void AdjustViewRect(EStereoscopicPass StereoPass, int32& X, int32& Y, uint32& SizeX, uint32& SizeY) const override
 	{
 		SizeX = SizeX / 2;
-		if( StereoPass == eSSP_RIGHT_EYE )
+		if (StereoPass == eSSP_RIGHT_EYE)
 		{
 			X += SizeX;
 		}
@@ -2022,7 +2027,7 @@ public:
 
 	virtual void CalculateStereoViewOffset(const enum EStereoscopicPass StereoPassType, const FRotator& ViewRotation, const float WorldToMeters, FVector& ViewLocation) override
 	{
-		if( StereoPassType != eSSP_FULL)
+		if (StereoPassType != eSSP_FULL && StereoPassType != eSSP_MONOSCOPIC_EYE)
 		{
 			float EyeOffset = 3.20000005f;
 			const float PassOffset = (StereoPassType == eSSP_LEFT_EYE) ? EyeOffset : -EyeOffset;
@@ -2032,27 +2037,28 @@ public:
 
 	virtual FMatrix GetStereoProjectionMatrix(const enum EStereoscopicPass StereoPassType, const float FOV) const override
 	{
-		const float ProjectionCenterOffset = 0.151976421f;
-		const float PassProjectionOffset = (StereoPassType == eSSP_LEFT_EYE) ? ProjectionCenterOffset : -ProjectionCenterOffset;
-
 		const float HalfFov = FMath::DegreesToRadians(FOVInDegrees) / 2.f;
 		const float InWidth = Width;
 		const float InHeight = Height;
-		const float XS = 1.0f / tan(HalfFov);
-		const float YS = InWidth / tan(HalfFov) / InHeight;
+		const float XS = 1.0f / FMath::Tan(HalfFov);
+		const float YS = InWidth / FMath::Tan(HalfFov) / InHeight;
+		const float NearZ = (StereoPassType != eSSP_MONOSCOPIC_EYE) ? GNearClippingPlane : MonoCullingDistance;
 
-		const float InNearZ = GNearClippingPlane;
 		return FMatrix(
-			FPlane(XS,                      0.0f,								    0.0f,							0.0f),
-			FPlane(0.0f,					YS,	                                    0.0f,							0.0f),
-			FPlane(0.0f,	                0.0f,								    0.0f,							1.0f),
-			FPlane(0.0f,					0.0f,								    InNearZ,						0.0f))
- 
-			* FTranslationMatrix(FVector(PassProjectionOffset,0,0));
-
+			FPlane(XS, 0.0f, 0.0f, 0.0f),
+			FPlane(0.0f, YS, 0.0f, 0.0f),
+			FPlane(0.0f, 0.0f, 0.0f, 1.0f),
+			FPlane(0.0f, 0.0f, NearZ, 0.0f));
 	}
 
-	virtual void InitCanvasFromView(FSceneView* InView, UCanvas* Canvas) override {}
+	virtual void InitCanvasFromView(FSceneView* InView, UCanvas* Canvas) override
+	{
+		if (InView != nullptr && InView->Family != nullptr)
+		{
+			const FSceneViewFamily& ViewFamily = *InView->Family;
+			MonoCullingDistance = ViewFamily.MonoParameters.CullingDistance - ViewFamily.MonoParameters.OverlapDistance;
+		}
+	}
 
 	virtual void GetEyeRenderParams_RenderThread(const struct FRenderingCompositePassContext& Context, FVector2D& EyeToSrcUVScaleValue, FVector2D& EyeToSrcUVOffsetValue) const override
 	{
@@ -2085,6 +2091,7 @@ public:
 	}
 
 	float FOVInDegrees;		// max(HFOV, VFOV) in degrees of imaginable HMD
+	float MonoCullingDistance;
 	int32 Width, Height;	// resolution of imaginable HMD
 };
 
@@ -2765,17 +2772,16 @@ bool UEngine::Exec( UWorld* InWorld, const TCHAR* Cmd, FOutputDevice& Ar )
 	{
 		return HandleFreezeAllCommand( Cmd, Ar, InWorld );
 	}
-#if !USE_NEW_ASYNC_IO
-	else if( FParse::Command(&Cmd, TEXT("FLUSHIOMANAGER")) )
+	
+	else if( !GNewAsyncIO && FParse::Command(&Cmd, TEXT("FLUSHIOMANAGER")) )
 	{
 		return HandleFlushIOManagerCommand( Cmd, Ar );
 	}
 	// This will list out the packages which are in the precache list and have not been "loaded" out.  (e.g. could be just there taking up memory!)
-	else if (FParse::Command(&Cmd, TEXT("ListPrecacheMapPackages")))
+	else if ( !GNewAsyncIO && FParse::Command(&Cmd, TEXT("ListPrecacheMapPackages")))
 	{
 		return HandleListPreCacheMapPackagesCommand(Cmd, Ar);
 	}
-#endif
 
 	else if( FParse::Command(&Cmd,TEXT("ToggleRenderingThread")) )
 	{
@@ -3409,14 +3415,15 @@ bool UEngine::HandleFreezeAllCommand( const TCHAR* Cmd, FOutputDevice& Ar, UWorl
 	return true;
 }
 
-#if !USE_NEW_ASYNC_IO
 bool UEngine::HandleFlushIOManagerCommand( const TCHAR* Cmd, FOutputDevice& Ar )
 {
+	check(!GNewAsyncIO);
 	FIOSystem::Get().BlockTillAllRequestsFinishedAndFlushHandles();
 	return true;
 }
 bool UEngine::HandleListPreCacheMapPackagesCommand(const TCHAR* Cmd, FOutputDevice& Ar)
 {
+	check(!GNewAsyncIO);
 	TArray<FString> Packages;
 	FLinkerLoad::GetListOfPackagesInPackagePrecacheMap(Packages);
 
@@ -3432,8 +3439,6 @@ bool UEngine::HandleListPreCacheMapPackagesCommand(const TCHAR* Cmd, FOutputDevi
 
 	return true;
 }
-
-#endif
 
 bool UEngine::HandleFreezeRenderingCommand( const TCHAR* Cmd, FOutputDevice& Ar, UWorld* InWorld  )
 {
@@ -9865,6 +9870,15 @@ bool UEngine::LoadMap( FWorldContext& WorldContext, FURL URL, class UPendingNetG
 			}
 		}
 
+		for (ULevelStreaming* LevelStreaming : WorldContext.World()->StreamingLevels)
+		{
+			// If an unloaded levelstreaming still has a loaded level we need to mark its objects to be deleted as well
+			if ((!LevelStreaming->bShouldBeLoaded || !LevelStreaming->bShouldBeVisible) && LevelStreaming->GetLoadedLevel())
+			{
+				CastChecked<UWorld>(LevelStreaming->GetLoadedLevel()->GetOuter())->MarkObjectsPendingKill();
+			}
+		}
+
 		// Stop all audio to remove references to current level.
 		if (FAudioDevice* AudioDevice = WorldContext.World()->GetAudioDevice())
 		{
@@ -12943,7 +12957,7 @@ int32 UEngine::RenderStatSounds(UWorld* World, FViewport* Viewport, FCanvas* Can
 
 						for (auto ShapeDetailsIt = StatSoundInfo.ShapeDetailsMap.CreateConstIterator(); ShapeDetailsIt; ++ShapeDetailsIt)
 						{
-							const FAttenuationSettings::AttenuationShapeDetails& ShapeDetails = ShapeDetailsIt.Value();
+							const FBaseAttenuationSettings::AttenuationShapeDetails& ShapeDetails = ShapeDetailsIt.Value();
 							switch (ShapeDetailsIt.Key())
 							{
 							case EAttenuationShape::Sphere:

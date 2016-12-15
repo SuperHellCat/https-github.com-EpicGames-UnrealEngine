@@ -220,12 +220,14 @@
 
 #endif
 
+#define METAL_TESSELLATION_PROFILE ((METAL_PROFILE || METAL_SM5_PROFILE) && USING_TESSELLATION)
+
 // non-editor platforms generally never want development/editor features.
 #define PLATFORM_SUPPORTS_DEVELOPMENT_SHADERS (!PS4_PROFILE && !XBOXONE_PROFILE && !ESDEFERRED_PROFILE && !SWITCH_PROFILE)
 #define USE_DEVELOPMENT_SHADERS (COMPILE_SHADERS_FOR_DEVELOPMENT && PLATFORM_SUPPORTS_DEVELOPMENT_SHADERS)
 
 #ifndef MOBILE_EMULATION
-#define MOBILE_EMULATION ((FEATURE_LEVEL == FEATURE_LEVEL_ES2 || FEATURE_LEVEL == FEATURE_LEVEL_ES3_1) && (!(COMPILER_GLSL_ES3_1 || COMPILER_GLSL_ES2) && USE_DEVELOPMENT_SHADERS && !(METAL_PROFILE && MAC) && !VULKAN_PROFILE && !SWITCH_PROFILE))
+#define MOBILE_EMULATION ((FEATURE_LEVEL == FEATURE_LEVEL_ES2 || FEATURE_LEVEL == FEATURE_LEVEL_ES3_1) && (!(COMPILER_GLSL_ES3_1 || COMPILER_GLSL_ES2) && USE_DEVELOPMENT_SHADERS && (!(METAL_PROFILE) || MAC) && !VULKAN_PROFILE && !SWITCH_PROFILE))
 #endif
 
 #ifndef MOBILE_FORCE_DEPTH_TEXTURE_READS
@@ -350,7 +352,18 @@ float2 Tile1Dto2D(float xsize, float idx)
 	return xyidx;
 }
 
-float4 PseudoVolumeTexture(Texture2D Tex, SamplerState TexSampler, float3 inPos, float xsize, float numframes)
+// return a pseudovolume texture sample.
+// useful for simulating 3D texturing with a 2D texture or as a texture flipbook with lerped transitions
+// treats 2d layout of frames a 3d texture and performs bilinear filtering by blending with an offset Z frame.
+// @param Tex          = Input Texture Object storing Volume Data
+// @param inPos        = Input float3 for Position, 0-1
+// @param xsize        = Input float for num frames in x,y directions
+// @param numFrames    = Input float for num total frames
+// @param mipmode      = Sampling mode: 0 = use miplevel, 1 = use UV computed gradients, 2 = Use gradients (default=0)
+// @param miplevel     = MIP level to use in mipmode=0 (default 0)
+// @param InDDX, InDDY = Texture gradients in mipmode=2
+float4 PseudoVolumeTexture(Texture2D Tex, SamplerState TexSampler, float3 inPos, float xsize, float numframes,
+	uint mipmode = 0, float miplevel = 0, float2 InDDX = 0, float2 InDDY = 0)
 {
 	float zframe = ceil(inPos.z * numframes);
 	float zphase = frac(inPos.z * numframes);
@@ -360,19 +373,27 @@ float4 PseudoVolumeTexture(Texture2D Tex, SamplerState TexSampler, float3 inPos,
 	float2 curframe = Tile1Dto2D(xsize, zframe) / xsize;
 	float2 nextframe = Tile1Dto2D(xsize, zframe + 1) / xsize;
 
-	float4 sampleA = Tex.SampleLevel(TexSampler, uv + curframe, 0);
-	float4 sampleB = Tex.SampleLevel(TexSampler, uv + nextframe, 0);
+	float4 sampleA = 0, sampleB = 0;
+	switch (mipmode)
+	{
+	case 0: // Mip level
+		sampleA = Tex.SampleLevel(TexSampler, uv + curframe, miplevel);
+		sampleB = Tex.SampleLevel(TexSampler, uv + nextframe, miplevel);
+		break;
+	case 1: // Gradients automatic from UV
+		sampleA = Texture2DSample(Tex, TexSampler, uv + curframe);
+		sampleB = Texture2DSample(Tex, TexSampler, uv + nextframe);
+		break;
+	case 2: // Deriviatives provided
+		sampleA = Tex.SampleGrad(TexSampler, uv + curframe,  InDDX, InDDY);
+		sampleB = Tex.SampleGrad(TexSampler, uv + nextframe, InDDX, InDDY);
+		break;
+	default:
+		break;
+	}
 
 	return lerp(sampleA, sampleB, zphase);
 }
-
-// return a pseudovolume texture sample.
-// useful for simulating 3D texturing with a 2D texture or as a texture flipbook with lerped transitions
-// treats 2d layout of frames a 3d texture and performs bilinear filtering by blending with an offset Z frame.
-// @param Tex       = Input Texture Object storing Volume Data
-// @param inPos     = Input float3 for Position, 0-1
-// @param xsize     = Input float for num frames in x,y directions
-// @param numFrames = Input float for num total frames
 
 #if FEATURE_LEVEL >= FEATURE_LEVEL_SM5 // Cubemap arrays are not supported in SM4 feature level
 	MaterialFloat4 TextureCubeArraySampleLevel(TextureCubeArray Tex, SamplerState Sampler, float3 UV, float ArrayIndex, MaterialFloat Mip)
@@ -694,6 +715,9 @@ Texture2D		SceneDepthTexture;
 SamplerState	SceneDepthTextureSampler;
 Texture2D		CustomDepthTexture;
 SamplerState	CustomDepthTextureSampler;
+// Custom Stencil texture used for mobile platforms
+Texture2D		MobileCustomStencilTexture;
+SamplerState	MobileCustomStencilTextureSampler;
 // scene HDR color
 Texture2D		SceneColorTexture;
 SamplerState	SceneColorTextureSampler;
@@ -929,9 +953,9 @@ MaterialFloat3 EncodeSceneColorForMaterialNode(MaterialFloat3 LinearSceneColor)
 #define MOSAIC_MUL   ((DRK_MUL * MOSAIC_BLEND - MOSAIC_ADD) * 2.0)
 
 // Done during forward shading pass before blending.
-MaterialFloat3 HdrMosaic(MaterialFloat3 LinearColor, MaterialFloat2 VPos) 
+MaterialFloat3 HdrMosaic(MaterialFloat3 LinearColor, float2 VPos) 
 {
-	MaterialFloat2 V;
+	float2 V;
 	V = VPos.xy * 0.5;
 	V.y += V.x;
 	V = frac(V);
@@ -944,9 +968,9 @@ MaterialFloat3 HdrMosaic(MaterialFloat3 LinearColor, MaterialFloat2 VPos)
 #define DEMOSAIC_ADD (1.0/HDR_MUL)
 
 // Resolve pass to remove mosaic and restore color.
-MaterialFloat3 HdrDemosaic(MaterialFloat3 Pixel, MaterialFloat3 OtherPixel, MaterialFloat2 VPos)
+MaterialFloat3 HdrDemosaic(MaterialFloat3 Pixel, MaterialFloat3 OtherPixel, float2 VPos)
 {
-	MaterialFloat A = frac(dot(VPos + View.DemosaicVposOffset, MaterialFloat2(0.5, 0.5)));
+	MaterialFloat A = frac(dot(VPos + View.DemosaicVposOffset, float2(0.5, 0.5)));
 	MaterialFloat B = 0.5 - A;
 	A = A * DEMOSAIC_MUL + DEMOSAIC_ADD;
 	B = B * DEMOSAIC_MUL + DEMOSAIC_ADD;
@@ -1038,7 +1062,7 @@ MaterialFloat3 RGBTDecode8BPC(MaterialFloat4 RGBT, MaterialFloat Range)
 #define HDR_ENCODE_MOSAIC 1.0	// 32bpp HDR using Mosaic encoding
 #define HDR_ENCODE_RGBA 2.0		// 32bpp HDR using RGBA encoding
 
-float GetHDR32bppEncodeMode()
+half GetHDR32bppEncodeMode()
 {
 #if ES2_PROFILE
 	#if COMPILER_GLSL_ES2 && !IOS && !WEBGL // ANDROID
@@ -1054,9 +1078,9 @@ float GetHDR32bppEncodeMode()
 
 #define DEFAULT_32BPPHDR_ENCODED_RANGE 1024.0
 
-MaterialFloat4 Encode32BPPHDR(MaterialFloat4 Color, MaterialFloat2 SvPosition)
+MaterialFloat4 Encode32BPPHDR(MaterialFloat4 Color, float2 SvPosition)
 {
-	float Mode = GetHDR32bppEncodeMode();
+	half Mode = GetHDR32bppEncodeMode();
 	if (Mode == HDR_ENCODE_MOSAIC)
 	{ 
 		return MaterialFloat4(HdrMosaic(Color.rgb, SvPosition), Color.a);
@@ -1071,9 +1095,9 @@ MaterialFloat4 Encode32BPPHDR(MaterialFloat4 Color, MaterialFloat2 SvPosition)
 	}
 }
 
-MaterialFloat4 Decode32BPPHDR(MaterialFloat4 Encoded, MaterialFloat3 OtherEncoded = MaterialFloat3(0, 0, 0), MaterialFloat2 SvPosition = MaterialFloat2(0, 0))
+MaterialFloat4 Decode32BPPHDR(MaterialFloat4 Encoded, MaterialFloat3 OtherEncoded = MaterialFloat3(0, 0, 0), float2 SvPosition = float2(0, 0))
 {
-	float Mode = GetHDR32bppEncodeMode();
+	half Mode = GetHDR32bppEncodeMode();
 	if (Mode == HDR_ENCODE_MOSAIC)
 	{
 		return MaterialFloat4(HdrDemosaic(Encoded.rgb, OtherEncoded, SvPosition), 0.0f);
@@ -1723,7 +1747,7 @@ struct FWriteToSliceGeometryOutput
 #endif
 
 // Helper macro to globally ignore requests for non-offset world positions in materials when lower than shader model 4. We do this
-// because we are using an extra interpolator for this second world position, and in < SM4 there may not be enough
+// because we are using an extra interpolator for this second world position, and in < ES31 there may not be enough
 #define USE_WORLD_POSITION_EXCLUDING_SHADER_OFFSETS	(NEEDS_WORLD_POSITION_EXCLUDING_SHADER_OFFSETS && FEATURE_LEVEL >= FEATURE_LEVEL_ES3_1)
 
 /** Used for calculating vertex positions and UVs when drawing with DrawRectangle */

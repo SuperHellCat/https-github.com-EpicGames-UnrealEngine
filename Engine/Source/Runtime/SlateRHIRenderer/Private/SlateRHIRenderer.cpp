@@ -39,6 +39,8 @@ DECLARE_FLOAT_COUNTER_STAT(TEXT("Slate UI"), Stat_GPU_SlateUI, STATGROUP_GPU);
 // Defines the maximum size that a slate viewport will create
 #define MAX_VIEWPORT_SIZE 16384
 
+#define USE_MAX_DRAWBUFFERS 0
+
 static TAutoConsoleVariable<float> CVarUILevel(
 	TEXT("r.HDR.UI.Level"),
 	1.0f,
@@ -148,6 +150,7 @@ FSlateRHIRenderer::FSlateRHIRenderer( TSharedRef<FSlateFontServices> InSlateFont
 	, EnqueuedWindowDrawBuffer(NULL)
 	, FreeBufferIndex(1)
 #endif
+	, CurrentSceneIndex(-1)
 {
 	ResourceManager = InResourceManager;
 
@@ -192,6 +195,8 @@ bool FSlateRHIRenderer::Initialize()
 
 	ElementBatcher = MakeShareable( new FSlateElementBatcher( RenderingPolicy.ToSharedRef() ) );
 
+	CurrentSceneIndex = -1;
+	ActiveScenes.Empty();
 	return true;
 }
 
@@ -234,6 +239,8 @@ void FSlateRHIRenderer::Destroy()
 	}
 
 	WindowToViewportInfo.Empty();
+	CurrentSceneIndex = -1;
+	ActiveScenes.Empty();
 }
 
 /** Returns a draw buffer that can be used by Slate windows to draw window elements */
@@ -383,8 +390,10 @@ void FSlateRHIRenderer::ConditionalResizeViewport( FViewportInfo* ViewInfo, uint
 		ViewInfo->HDRColorGamut = HDRColorGamut;
 		ViewInfo->HDROutputDevice = HDROutputDevice;
 
+		PreResizeBackBufferDelegate.Broadcast(&ViewInfo->ViewportRHI);
 		if( IsValidRef( ViewInfo->ViewportRHI ) )
 		{
+			ensureMsgf(ViewInfo->ViewportRHI->GetRefCount() == 1, TEXT("Viewport backbuffer was not properly released"));
 			RHIResizeViewport(ViewInfo->ViewportRHI, NewWidth, NewHeight, bFullscreen, ViewInfo->PixelFormat);
 		}
 		else
@@ -461,7 +470,7 @@ void FSlateRHIRenderer::OnWindowDestroyed( const TSharedRef<SWindow>& InWindow )
 // Limited platform support for HDR UI composition
 bool SupportsUICompositionRendering(const EShaderPlatform Platform)
 {
-	return IsFeatureLevelSupported(Platform,ERHIFeatureLevel::SM5) && RHISupportsGeometryShaders(Platform);
+	return IsFeatureLevelSupported(Platform,ERHIFeatureLevel::SM5) && (RHISupportsGeometryShaders(Platform) || RHISupportsVertexShaderLayer(Platform));
 }
 
 // Pixel shader to generate LUT for HDR UI composition
@@ -759,7 +768,7 @@ void FSlateRHIRenderer::DrawWindow_RenderThread(FRHICommandListImmediate& RHICmd
 				SetRenderTarget(RHICmdList, ViewportInfo.ColorSpaceLUTRT, FTextureRHIRef());
 
 				TShaderMapRef<FWriteToSliceVS> VertexShader(ShaderMap);
-				TShaderMapRef<FWriteToSliceGS> GeometryShader(ShaderMap);
+				TOptionalShaderMapRef<FWriteToSliceGS> GeometryShader(ShaderMap);
 				TShaderMapRef<FCompositeLUTGenerationPS> PixelShader(ShaderMap);
 				const FVolumeBounds VolumeBounds(CompositionLUTSize);
 
@@ -767,7 +776,10 @@ void FSlateRHIRenderer::DrawWindow_RenderThread(FRHICommandListImmediate& RHICmd
 				SetGlobalBoundShaderState(RHICmdList, FeatureLevel, BoundShaderState, GScreenVertexDeclaration.VertexDeclarationRHI, *VertexShader, *PixelShader, *GeometryShader);
 
 				VertexShader->SetParameters(RHICmdList, VolumeBounds, VolumeBounds.MaxX - VolumeBounds.MinX);
-				GeometryShader->SetParameters(RHICmdList, VolumeBounds);
+				if(GeometryShader.IsValid())
+				{
+					GeometryShader->SetParameters(RHICmdList, VolumeBounds);
+				}
 				PixelShader->SetParameters(RHICmdList);
 
 				RHICmdList.SetBlendState(TStaticBlendState<>::GetRHI());
@@ -787,10 +799,11 @@ void FSlateRHIRenderer::DrawWindow_RenderThread(FRHICommandListImmediate& RHICmd
 
 				SetRenderTarget(RHICmdList, FinalBuffer, FTextureRHIRef());
 
-			TShaderMapRef<FScreenVS> VertexShader(ShaderMap);
+				TShaderMapRef<FScreenVS> VertexShader(ShaderMap);
 
-				if (IsRHIDeviceNVIDIA()) // Nvidia-specific scRGB encoding
+				if (HDROutputDevice == 5 || HDROutputDevice == 6)
 				{
+					// ScRGB encoding
 					TShaderMapRef<FCompositePS<1>> PixelShader(ShaderMap);
 					static FGlobalBoundShaderState BoundShaderState;
 					SetGlobalBoundShaderState(RHICmdList, FeatureLevel, BoundShaderState, RendererModule.GetFilterVertexDeclaration().VertexDeclarationRHI, *VertexShader, *PixelShader);
@@ -798,22 +811,23 @@ void FSlateRHIRenderer::DrawWindow_RenderThread(FRHICommandListImmediate& RHICmd
 				}
 				else
 				{
+					// ST2084 (PQ) encoding
 					TShaderMapRef<FCompositePS<0>> PixelShader(ShaderMap);
-			static FGlobalBoundShaderState BoundShaderState;
-			SetGlobalBoundShaderState(RHICmdList, FeatureLevel, BoundShaderState, RendererModule.GetFilterVertexDeclaration().VertexDeclarationRHI, *VertexShader, *PixelShader);
+					static FGlobalBoundShaderState BoundShaderState;
+					SetGlobalBoundShaderState(RHICmdList, FeatureLevel, BoundShaderState, RendererModule.GetFilterVertexDeclaration().VertexDeclarationRHI, *VertexShader, *PixelShader);
 					PixelShader->SetParameters(RHICmdList, ViewportInfo.UITargetSRV, ViewportInfo.HDRSourceSRV, ViewportInfo.ColorSpaceLUTSRV);
 				}
 
-			RendererModule.DrawRectangle(
-				RHICmdList,
-				0, 0,
-				ViewportWidth, ViewportHeight,
-				0, 0,
-				ViewportWidth, ViewportHeight,
-				FIntPoint(ViewportWidth, ViewportHeight),
-				FIntPoint(ViewportWidth, ViewportHeight),
-				*VertexShader,
-				EDRF_UseTriangleOptimization);
+				RendererModule.DrawRectangle(
+					RHICmdList,
+					0, 0,
+					ViewportWidth, ViewportHeight,
+					0, 0,
+					ViewportWidth, ViewportHeight,
+					FIntPoint(ViewportWidth, ViewportHeight),
+					FIntPoint(ViewportWidth, ViewportHeight),
+					*VertexShader,
+					EDRF_UseTriangleOptimization);
 			}
 		}
 	}
@@ -1556,6 +1570,56 @@ ISlateAtlasProvider* FSlateRHIRenderer::GetTextureAtlasProvider()
 	return nullptr;
 }
 
+
+
+int32 FSlateRHIRenderer::RegisterCurrentScene(FSceneInterface* Scene)
+{
+	check(IsInGameThread());
+	if (Scene)
+	{
+		CurrentSceneIndex = ActiveScenes.AddUnique(Scene);
+	}
+	else
+	{
+		CurrentSceneIndex = -1;
+	}
+
+	// We need to keep the ActiveScenes array synchronized with the Policy's ActiveScenes array on
+	// the render thread.
+	ENQUEUE_UNIQUE_RENDER_COMMAND_THREEPARAMETER(
+		RegisterCurrentSceneOnPolicy,
+		FSlateRHIRenderingPolicy*, InRenderPolicy, RenderingPolicy.Get(),
+		FSceneInterface*, InScene, Scene,
+		int32, InSceneIndex, CurrentSceneIndex,
+	{
+		InRenderPolicy->AddSceneAt(InScene, InSceneIndex);
+	});
+	return CurrentSceneIndex;
+}
+
+int32 FSlateRHIRenderer::GetCurrentSceneIndex() const
+{
+	return CurrentSceneIndex;
+}
+
+void FSlateRHIRenderer::ClearScenes()
+{
+	if(!IsInSlateThread())
+	{
+		CurrentSceneIndex = -1;
+		ActiveScenes.Empty();
+
+		// We need to keep the ActiveScenes array synchronized with the Policy's ActiveScenes array on
+		// the render thread.
+		ENQUEUE_UNIQUE_RENDER_COMMAND_ONEPARAMETER(
+			ClearScenesOnPolicy,
+			FSlateRenderingPolicy*, InRenderPolicy, RenderingPolicy.Get(),
+			{
+				InRenderPolicy->ClearScenes();
+			});
+	}
+}
+
 bool FSlateRHIRenderer::AreShadersInitialized() const
 {
 #if WITH_EDITORONLY_DATA
@@ -1580,8 +1644,14 @@ void FSlateRHIRenderer::ReleaseAccessedResources(bool bImmediatelyFlush)
 	// Clear accessed UTexture and Material objects from the previous frame
 	ResourceManager->BeginReleasingAccessedResources(bImmediatelyFlush);
 
+	// We keep track of the Scene objects from SceneViewports on the SlateRenderer. Make sure that this gets refreshed every frame.
+	ClearScenes();
+
 	if ( bImmediatelyFlush )
 	{
+		// Release resources generated specifically by the rendering policy if we are flushing.  This should NOT be done unless flushing
+		RenderingPolicy->FlushGeneratedResources();
+
 		FlushCommands();
 	}
 }

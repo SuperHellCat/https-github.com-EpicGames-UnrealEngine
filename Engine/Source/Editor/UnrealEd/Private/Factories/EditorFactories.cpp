@@ -191,6 +191,7 @@
 #include "Interfaces/IImageWrapperModule.h"
 
 #include "FbxImporter.h"
+#include "FbxErrors.h"
 
 #include "AssetRegistryModule.h"
 #include "IContentBrowserSingleton.h"
@@ -231,6 +232,7 @@
 #include "Animation/BlendSpace.h"
 #include "Animation/AimOffsetBlendSpace.h"
 #include "Animation/AimOffsetBlendSpace1D.h"
+#include "GameFramework/ForceFeedbackAttenuation.h"
 #include "Haptics/HapticFeedbackEffect_Curve.h"
 #include "Haptics/HapticFeedbackEffect_Buffer.h"
 #include "Haptics/HapticFeedbackEffect_SoundWave.h"
@@ -243,6 +245,7 @@
 #include "ImageUtils.h"
 #include "Engine/PreviewMeshCollection.h"
 #include "Factories/PreviewMeshCollectionFactory.h"
+#include "Factories/ForceFeedbackAttenuationFactory.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogEditorFactories, Log, All);
 
@@ -4394,7 +4397,10 @@ UObject* UFontFileImportFactory::FactoryCreateBinary(UClass* InClass, UObject* I
 	if (FontFace)
 	{
 		FontFace->SourceFilename = GetCurrentFilename();
-		FontFace->FontFaceData.Append(InBuffer, InBufferEnd - InBuffer);
+
+		TArray<uint8> FontData;
+		FontData.Append(InBuffer, InBufferEnd - InBuffer);
+		FontFace->FontFaceData->SetData(MoveTemp(FontData));
 	}
 
 	FEditorDelegates::OnAssetPostImport.Broadcast(this, FontFace);
@@ -4929,6 +4935,10 @@ EReimportResult::Type UReimportFbxStaticMeshFactory::Reimport( UObject* Obj )
 	
 	UnFbx::FFbxImporter* FFbxImporter = UnFbx::FFbxImporter::GetInstance();
 	UnFbx::FBXImportOptions* ImportOptions = FFbxImporter->GetImportOptions();
+	
+	//Pop the message log in case of error
+	UnFbx::FFbxLoggerSetter Logger(FFbxImporter, true);
+
 	//Clean up the options
 	UnFbx::FBXImportOptions::ResetOptions(ImportOptions);
 
@@ -4937,18 +4947,11 @@ EReimportResult::Type UReimportFbxStaticMeshFactory::Reimport( UObject* Obj )
 	UFbxImportUI* ReimportUI = NewObject<UFbxImportUI>();
 	ReimportUI->MeshTypeToImport = FBXIT_StaticMesh;
 	ReimportUI->bOverrideFullName = false;
-	ReimportUI->bCombineMeshes = true;
+	ReimportUI->StaticMeshImportData->bCombineMeshes = true;
 
 	if (!ImportUI)
 	{
 		ImportUI = NewObject<UFbxImportUI>(this, NAME_None, RF_Public);
-	}
-	else
-	{
-		//Set misc options
-		ReimportUI->bConvertScene = ImportUI->bConvertScene;
-		ReimportUI->bForceFrontXAxis = ImportUI->bForceFrontXAxis;
-		ReimportUI->bConvertSceneUnit = ImportUI->bConvertSceneUnit;
 	}
 
 	if( ImportData )
@@ -5059,6 +5062,8 @@ EReimportResult::Type UReimportFbxStaticMeshFactory::Reimport( UObject* Obj )
 				{
 					Mesh->MarkPackageDirty();
 				}
+
+				FFbxImporter->ImportStaticMeshGlobalSockets(Mesh);
 			}
 			else
 			{
@@ -5180,13 +5185,6 @@ EReimportResult::Type UReimportFbxSkeletalMeshFactory::Reimport( UObject* Obj )
 	if (!ImportUI)
 	{
 		ImportUI = NewObject<UFbxImportUI>(this, NAME_None, RF_Public);
-	}
-	else
-	{
-		//Set misc options
-		ReimportUI->bConvertScene = ImportUI->bConvertScene;
-		ReimportUI->bForceFrontXAxis = ImportUI->bForceFrontXAxis;
-		ReimportUI->bConvertSceneUnit = ImportUI->bConvertSceneUnit;
 	}
 
 	bool bSuccess = false;
@@ -5401,6 +5399,9 @@ EReimportResult::Type UReimportFbxAnimSequenceFactory::Reimport( UObject* Obj )
 
 	UnFbx::FFbxImporter* Importer = UnFbx::FFbxImporter::GetInstance();
 
+	//Pop the message log in case of error
+	UnFbx::FFbxLoggerSetter Logger(Importer, true);
+
 	CurrentFilename = Filename;
 
 	USkeleton* Skeleton = AnimSequence->GetSkeleton();
@@ -5413,6 +5414,7 @@ EReimportResult::Type UReimportFbxAnimSequenceFactory::Reimport( UObject* Obj )
 			// If skeleton wasn't found or the user canceled out of the dialog, we cannot proceed, but this reimport factory 
 			// has still technically "handled" the reimport, so return true instead of false
 			UE_LOG(LogEditorFactories, Warning, TEXT("-- import failed") );
+			Importer->AddTokenizedErrorMessage(FTokenizedMessage::Create(EMessageSeverity::Error, LOCTEXT("Error_CouldNotFindSkeleton", "Cannot re-import animation with no skeleton.\nImport failed.")), FFbxErrors::SkeletalMesh_NoBoneFound);
 			return EReimportResult::Succeeded;
 		}
 	}
@@ -5437,6 +5439,7 @@ EReimportResult::Type UReimportFbxAnimSequenceFactory::Reimport( UObject* Obj )
 	else
 	{
 		UE_LOG(LogEditorFactories, Warning, TEXT("-- import failed") );
+		Importer->AddTokenizedErrorMessage(FTokenizedMessage::Create(EMessageSeverity::Error, LOCTEXT("Error_CouldNotReimportAnimation", "Cannot re-import animation.")), FFbxErrors::Generic_ReimportingObjectFailed);
 	}
 
 	Importer->ReleaseScene(); 
@@ -6483,6 +6486,24 @@ UObject* UStructureFactory::FactoryCreateNew(UClass* Class, UObject* InParent, F
 {
 	ensure(UUserDefinedStruct::StaticClass() == Class);
 	return FStructureEditorUtils::CreateUserDefinedStruct(InParent, Name, Flags);
+}
+
+/*-----------------------------------------------------------------------------
+UForceFeedbackAttenuationFactory implementation.
+-----------------------------------------------------------------------------*/
+UForceFeedbackAttenuationFactory::UForceFeedbackAttenuationFactory(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+
+	SupportedClass = UForceFeedbackAttenuation::StaticClass();
+	bCreateNew = true;
+	bEditorImport = false;
+	bEditAfterNew = true;
+}
+
+UObject* UForceFeedbackAttenuationFactory::FactoryCreateNew( UClass* InClass, UObject* InParent, FName InName, EObjectFlags Flags, UObject* Context, FFeedbackContext* Warn )
+{
+	return NewObject<UForceFeedbackAttenuation>(InParent, InName, Flags);
 }
 
 /*-----------------------------------------------------------------------------

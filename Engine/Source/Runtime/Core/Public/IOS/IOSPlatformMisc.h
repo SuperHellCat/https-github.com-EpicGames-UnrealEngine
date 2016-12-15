@@ -138,6 +138,10 @@ struct CORE_API FIOSPlatformMisc : public FGenericPlatformMisc
 	static void ResetGamepadAssignmentToController(int32 ControllerId);
 	static bool IsControllerAssignedToGamepad(int32 ControllerId);
 
+	static int GetAudioVolume();
+	static bool AreHeadphonesPluggedIn();
+	static int GetBatteryLevel();
+
 	static void RegisterForRemoteNotifications();
 
 	static class IPlatformChunkInstall* GetPlatformChunkInstall();
@@ -177,6 +181,8 @@ struct CORE_API FIOSPlatformMisc : public FGenericPlatformMisc
 		IOS_IPhone6Plus,
 		IOS_IPhone6S,
 		IOS_IPhone6SPlus,
+        IOS_IPhone7,
+        IOS_IPhone7Plus,
 		IOS_IPadPro,
 		IOS_AppleTV,
 		IOS_IPhoneSE,
@@ -209,6 +215,8 @@ struct CORE_API FIOSPlatformMisc : public FGenericPlatformMisc
 			L"IPhone6Plus",
 			L"IPhone6S",
 			L"IPhone6SPlus",
+            L"IPhone7",
+            L"IPhone7Plus",
 			L"IPadPro",
 			L"AppleTV",
 			L"IPhoneSE",

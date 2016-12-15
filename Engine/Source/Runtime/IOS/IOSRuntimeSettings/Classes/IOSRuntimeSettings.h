@@ -45,6 +45,18 @@ UENUM()
 
 };
 
+UENUM()
+enum class EIOSMetalShaderStandard : uint8
+{
+    /** Metal Shaders Compatible With iOS 8.0/tvOS 9.0 or later (std=ios-metal1.0) */
+    IOSMetalSLStandard_1_0 = 0 UMETA(DisplayName="Metal v1.0 (iOS 8.0/tvOS 9.0)"),
+    
+    /** Metal Shaders Compatible With iOS 9.0/tvOS 9.0 or later (std=ios-metal1.1) */
+    IOSMetalSLStandard_1_1 = 1 UMETA(DisplayName="Metal v1.1 (iOS 9.0/tvOS 9.0)"),
+    
+    /** Metal Shaders Compatible With iOS 10.0/tvOS 10.0 or later (std=ios-metal1.2) */
+    IOSMetalSLStandard_1_2 = 2 UMETA(DisplayName="Metal v1.2 (iOS 10.0/tvOS 10.0)"),
+};
 
 /**
  *	IOS Build resource file struct, used to serialize filepaths to the configs for use in the build system,
@@ -230,11 +242,11 @@ public:
 	bool bShipForBitcode;
 	
 	// Any additional linker flags to pass to the linker in non-shipping builds
-	UPROPERTY(GlobalConfig, EditAnywhere, Category = Build, meta = (DispalyName = "Additional Non-Shipping Linker Flags", ConfigHierarchyEditable))
+	UPROPERTY(GlobalConfig, EditAnywhere, Category = Build, meta = (DisplayName = "Additional Non-Shipping Linker Flags", ConfigHierarchyEditable))
 	FString AdditionalLinkerFlags;
 
 	// Any additional linker flags to pass to the linker in shipping builds
-	UPROPERTY(GlobalConfig, EditAnywhere, Category = Build, meta = (DispalyName = "Additional Shipping Linker Flags", ConfigHierarchyEditable))
+	UPROPERTY(GlobalConfig, EditAnywhere, Category = Build, meta = (DisplayName = "Additional Shipping Linker Flags", ConfigHierarchyEditable))
 	FString AdditionalShippingLinkerFlags;
 
 	// The name or ip address of the remote mac which will be used to build IOS
@@ -336,8 +348,8 @@ public:
 	// Facebook App ID obtained from Facebook's Developer Centre
 	UPROPERTY(GlobalConfig, EditAnywhere, Category = Online, meta = (EditCondition = "bEnableFacebookSupport"))
 	FString FacebookAppID;
-
-	// Mobile provision to utilize when signing
+    
+    // Mobile provision to utilize when signing
 	UPROPERTY(GlobalConfig, EditAnywhere, Category = Build)
 	FString MobileProvision;
 
@@ -345,6 +357,10 @@ public:
 	UPROPERTY(GlobalConfig, EditAnywhere, Category = Build)
 	FString SigningCertificate;
 
+    // The maximum supported Metal shader langauge version.
+    // This defines what features may be used and OS versions supported.
+    UPROPERTY(EditAnywhere, config, Category=Rendering, meta = (DisplayName = "Max. Metal Shader Standard To Target"))
+    uint8 MaxShaderLanguageVersion;
 
 #if WITH_EDITOR
 	// UObject interface

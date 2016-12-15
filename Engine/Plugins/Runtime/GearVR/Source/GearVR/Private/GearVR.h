@@ -42,12 +42,32 @@ using namespace OVR;
 #define OVR_DEFAULT_EYE_RENDER_TARGET_WIDTH		1024
 #define OVR_DEFAULT_EYE_RENDER_TARGET_HEIGHT	1024
 
-//#define OVR_DEBUG_DRAW
+#define OVR_DEBUG_DRAW 0
 
 class FGearVR;
 
 namespace GearVR
 {
+
+inline int32 ViewIndexFromStereoPass(const EStereoscopicPass StereoPassType) {
+	switch (StereoPassType)
+	{
+	case eSSP_LEFT_EYE:
+	case eSSP_FULL:
+		return 0;
+
+	case eSSP_RIGHT_EYE:
+		return 1;
+
+	case eSSP_MONOSCOPIC_EYE:
+		return 2;
+
+	default:
+		check(0);
+		return -1;
+	}
+}
+
 /**
  * Converts quat from Oculus ref frame to Unreal
  */
@@ -141,10 +161,10 @@ public:
 class FGameFrame : public FHMDGameFrame
 {
 public:
-	ovrPosef				CurEyeRenderPose[2];// eye render pose read at the beginning of the frame
+	ovrPosef				CurEyeRenderPose[3];// eye render pose read at the beginning of the frame
 	ovrTracking				CurSensorState;	    // sensor state read at the beginning of the frame
 
-	ovrPosef				EyeRenderPose[2];	// eye render pose actually used
+	ovrPosef				EyeRenderPose[3];	// eye render pose actually used
 	ovrRigidBodyPosef		HeadPose;			// position of head actually used
 	ovrMatrix4f				TanAngleMatrix;
 	
@@ -246,7 +266,7 @@ public:
 			bInAllocatedStorage,
 			InFlags,
 			InTextureRange,
-			FClearValueBinding::Black
+			FClearValueBinding()
 			)
 	{
 		ColorTextureSet = nullptr;

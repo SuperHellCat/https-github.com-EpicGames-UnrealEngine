@@ -2434,11 +2434,11 @@ void UParticleSystem::GetAssetRegistryTags(TArray<FAssetRegistryTag>& OutTags) c
 	const float BoundsSize = FixedRelativeBoundingBox.GetSize().GetMax();
 	OutTags.Add(FAssetRegistryTag("FixedBoundsSize", bUseFixedRelativeBoundingBox ? FString::Printf(TEXT("%.2f"), BoundsSize) : FString(TEXT("None")), FAssetRegistryTag::TT_Numerical));
 
-	OutTags.Add(FAssetRegistryTag("NumEmitters", LexicalConversion::ToString(Emitters.Num()), FAssetRegistryTag::TT_Numerical));
+	OutTags.Add(FAssetRegistryTag("NumEmitters", Lex::ToString(Emitters.Num()), FAssetRegistryTag::TT_Numerical));
 
-	OutTags.Add(FAssetRegistryTag("NumLODs", LexicalConversion::ToString(LODDistances.Num()), FAssetRegistryTag::TT_Numerical));
+	OutTags.Add(FAssetRegistryTag("NumLODs", Lex::ToString(LODDistances.Num()), FAssetRegistryTag::TT_Numerical));
 
-	OutTags.Add(FAssetRegistryTag("WarmupTime", LexicalConversion::ToString(WarmupTime), FAssetRegistryTag::TT_Numerical));
+	OutTags.Add(FAssetRegistryTag("WarmupTime", Lex::ToString(WarmupTime), FAssetRegistryTag::TT_Numerical));
 
 	// Done here instead of as an AssetRegistrySearchable string to avoid the long prefix on the enum value string
 	FString LODMethodString = TEXT("Unknown");
@@ -2473,10 +2473,10 @@ void UParticleSystem::GetAssetRegistryTags(TArray<FAssetRegistryTag>& OutTags) c
 			++NumEmittersAtEachSig[(int32)Emitter->SignificanceLevel];			
 		}
 	}
-	OutTags.Add(FAssetRegistryTag("Critical Emitters", LexicalConversion::ToString(NumEmittersAtEachSig[(int32)EParticleSignificanceLevel::Critical]), FAssetRegistryTag::TT_Numerical));
-	OutTags.Add(FAssetRegistryTag("High Emitters", LexicalConversion::ToString(NumEmittersAtEachSig[(int32)EParticleSignificanceLevel::High]), FAssetRegistryTag::TT_Numerical));
-	OutTags.Add(FAssetRegistryTag("Medium Emitters", LexicalConversion::ToString(NumEmittersAtEachSig[(int32)EParticleSignificanceLevel::Medium]), FAssetRegistryTag::TT_Numerical));
-	OutTags.Add(FAssetRegistryTag("Low Emitters", LexicalConversion::ToString(NumEmittersAtEachSig[(int32)EParticleSignificanceLevel::Low]), FAssetRegistryTag::TT_Numerical));
+	OutTags.Add(FAssetRegistryTag("Critical Emitters", Lex::ToString(NumEmittersAtEachSig[(int32)EParticleSignificanceLevel::Critical]), FAssetRegistryTag::TT_Numerical));
+	OutTags.Add(FAssetRegistryTag("High Emitters", Lex::ToString(NumEmittersAtEachSig[(int32)EParticleSignificanceLevel::High]), FAssetRegistryTag::TT_Numerical));
+	OutTags.Add(FAssetRegistryTag("Medium Emitters", Lex::ToString(NumEmittersAtEachSig[(int32)EParticleSignificanceLevel::Medium]), FAssetRegistryTag::TT_Numerical));
+	OutTags.Add(FAssetRegistryTag("Low Emitters", Lex::ToString(NumEmittersAtEachSig[(int32)EParticleSignificanceLevel::Low]), FAssetRegistryTag::TT_Numerical));
 
 	Super::GetAssetRegistryTags(OutTags);
 }
@@ -4350,6 +4350,11 @@ public:
 TAutoConsoleVariable<int32> CVarFXEarlySchedule(TEXT("FX.EarlyScheduleAsync"), 0, TEXT("If 1, particle system components that can run async will be scheduled earlier in the frame"));
 
 DECLARE_CYCLE_STAT(TEXT("PSys Comp Marshall Time"),STAT_UParticleSystemComponent_Marshall,STATGROUP_Particles);
+
+bool UParticleSystemComponent::IsReadyForOwnerToAutoDestroy() const
+{
+	return (!bIsActive && bWasCompleted);
+}
 
 void UParticleSystemComponent::TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction *ThisTickFunction)
 {
@@ -6709,57 +6714,128 @@ void UParticleSystemComponent::AutoPopulateInstanceProperties()
 	}
 }
 
-
 void UParticleSystemComponent::GetUsedMaterials( TArray<UMaterialInterface*>& OutMaterials ) const
 {
-	if( Template )
+	if (Template)
 	{
-		for( int32 EmitterIdx = 0; EmitterIdx < Template->Emitters.Num(); ++EmitterIdx )
+		for (int32 EmitterIdx = 0; EmitterIdx < Template->Emitters.Num(); ++EmitterIdx)
 		{
-			const UParticleEmitter* Emitter = Template->Emitters[ EmitterIdx ];
-			for( int32 LodLevel = 0; LodLevel < Emitter->LODLevels.Num(); ++LodLevel )
+			const UParticleEmitter* Emitter = Template->Emitters[EmitterIdx];
+			for (int32 LodIndex = 0; LodIndex < Emitter->LODLevels.Num(); ++LodIndex)
 			{
-				const UParticleLODLevel* LOD = Emitter->LODLevels[ LodLevel ];
+				const UParticleLODLevel* LOD = Emitter->LODLevels[LodIndex];
+
 				// Only process enabled emitters
-				if( LOD->bEnabled )
+				if (LOD->bEnabled)
 				{
-					// Assume no materials will be found on the modules.  If this remains true, the material off the required module will be taken
-					bool bMaterialsFound = false;
-					for( int32 ModuleIdx = 0; ModuleIdx < LOD->Modules.Num(); ++ModuleIdx )
+					const UParticleModuleTypeDataMesh* MeshTypeData = Cast<UParticleModuleTypeDataMesh>(LOD->TypeDataModule);
+
+					if (MeshTypeData && MeshTypeData->Mesh)
 					{
-						UParticleModule* Module = LOD->Modules[ ModuleIdx ];
-						if( Module->bEnabled && // Module is enabled
-								 Module->IsA( UParticleModuleMeshMaterial::StaticClass() ) && // Module is a mesh material module
-								 LOD->TypeDataModule && // There is a type data module
-								 LOD->TypeDataModule->bEnabled && // They type data module is enabled 
-								 LOD->TypeDataModule->IsA( UParticleModuleTypeDataMesh::StaticClass() ) ) // The type data module is mesh type data
+						const FStaticMeshLODResources& LODModel = MeshTypeData->Mesh->RenderData->LODResources[0];
+
+						// Gather the materials applied to the LOD.
+						for (int32 SectionIndex = 0; SectionIndex < LODModel.Sections.Num(); SectionIndex++)
 						{
-							// Module is a valid TypeDataMesh module
-							const UParticleModuleTypeDataMesh* TypeDataModule = Cast<UParticleModuleTypeDataMesh>( LOD->TypeDataModule );
-							if( !TypeDataModule->bOverrideMaterial )
-							{
-								// If the material isnt being overridden by the required module, for each mesh section, find the corresponding entry in the mesh material module
-								// If that entry does not exist, take the material directly off the mesh section
-								const UParticleModuleMeshMaterial* MaterialModule = Cast<UParticleModuleMeshMaterial>( LOD->Modules[ ModuleIdx ] );
-								if( TypeDataModule->Mesh )
+							UMaterialInterface* Material = NULL;
+							
+							TArray<FName>& NamedOverrides = LOD->RequiredModule->NamedMaterialOverrides;
+							TArray<FNamedEmitterMaterial>& Slots = Template->NamedMaterialSlots;
+
+							if (NamedOverrides.IsValidIndex(SectionIndex))
+							{	
+								//If we have named material overrides then get it's index into the emitter materials array.	
+								for (int32 CheckIdx = 0; CheckIdx < Slots.Num(); ++CheckIdx)
 								{
-									for (const FStaticMaterial &StaticMaterial : TypeDataModule->Mesh->StaticMaterials)
+									if (NamedOverrides[SectionIndex] == Slots[CheckIdx].Name)
 									{
-										OutMaterials.Add(StaticMaterial.MaterialInterface);
+										//Default to the default material for that slot.
+										Material = Slots[CheckIdx].Material;
+										if (EmitterMaterials.IsValidIndex(CheckIdx) && nullptr != EmitterMaterials[CheckIdx] )
+										{
+											//This material has been overridden externally, e.g. from a BP so use that one.
+											Material = EmitterMaterials[CheckIdx];
+										}
+
+										break;
 									}
 								}
 							}
+
+							// See if there is a mesh material module.
+							if (Material == NULL)
+							{
+								for (int32 ModuleIndex = 0; ModuleIndex < LOD->Modules.Num(); ModuleIndex++)
+								{
+									UParticleModuleMeshMaterial* MeshMatModule = Cast<UParticleModuleMeshMaterial>(LOD->Modules[ModuleIndex]);
+									if (MeshMatModule && MeshMatModule->bEnabled)
+									{
+										if (SectionIndex < MeshMatModule->MeshMaterials.Num())
+										{
+											Material = MeshMatModule->MeshMaterials[SectionIndex];
+											break;
+										}
+									}
+								}
+							}
+
+							// Overriding the material?
+							if (Material == NULL && MeshTypeData->bOverrideMaterial == true)
+							{
+								Material = LOD->RequiredModule->Material;
+							}
+
+							// Use the material set on the mesh.
+							if (Material == NULL)
+							{
+								Material = MeshTypeData->Mesh->GetMaterial(LODModel.Sections[SectionIndex].MaterialIndex);
+							}
+
+							if (Material)
+							{
+								OutMaterials.Add(Material);
+							}
 						}
 					}
-					if( bMaterialsFound == false )
+					else
 					{
-						// If no material overrides were found in any of the lod modules, take the material off the required module
-						OutMaterials.Add( LOD->RequiredModule->Material );
+						UMaterialInterface* Material = NULL;
+							
+						TArray<FName>& NamedOverrides = LOD->RequiredModule->NamedMaterialOverrides;
+						TArray<FNamedEmitterMaterial>& Slots = Template->NamedMaterialSlots;
+
+						if (NamedOverrides.Num() > 0)
+						{
+							for (int32 CheckIdx = 0; CheckIdx < Slots.Num(); ++CheckIdx)
+							{
+								if (NamedOverrides[0] == Slots[CheckIdx].Name)
+								{
+									//Default to the default material for that slot.
+									Material = Slots[CheckIdx].Material;
+									if (EmitterMaterials.IsValidIndex(CheckIdx) && nullptr != EmitterMaterials[CheckIdx])
+									{
+										//This material has been overridden externally, e.g. from a BP so use that one.
+										Material = EmitterMaterials[CheckIdx];
+									}
+        
+									break;
+								}
+							}
+						}
+
+						if (!Material)
+						{
+							Material = LOD->RequiredModule->Material;
+						}
+
+						OutMaterials.Add(Material);
 					}
 				}
 			}
 		}
 	}
+
+	OutMaterials.Append(EmitterMaterials);
 }
 
 FBodyInstance* UParticleSystemComponent::GetBodyInstance(FName BoneName /*= NAME_None*/, bool bGetWelded /*= true*/) const

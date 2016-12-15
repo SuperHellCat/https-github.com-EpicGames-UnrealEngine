@@ -18,6 +18,7 @@
 #include "UObject/UObjectIterator.h"
 #include "ComponentReregisterContext.h"
 #include "Materials/MaterialExpressionBreakMaterialAttributes.h"
+#include "Materials/MaterialExpressionReroute.h"
 #include "ShaderCompiler.h"
 #include "MaterialCompiler.h"
 #include "MeshMaterialShaderType.h"
@@ -117,6 +118,18 @@ void FExpressionInput::Connect( int32 InOutputIndex, class UMaterialExpression* 
 	MaskA = Output->MaskA;
 }
 #endif // WITH_EDITOR
+
+FExpressionInput FExpressionInput::GetTracedInput() const
+{
+#if WITH_EDITORONLY_DATA
+	if (Expression != nullptr && Expression->IsA(UMaterialExpressionReroute::StaticClass()))
+	{
+		UMaterialExpressionReroute* Reroute = CastChecked<UMaterialExpressionReroute>(Expression);
+		return Reroute->TraceInputsToRealInput();
+	}
+#endif
+	return *this;
+}
 
 /** Native serialize for FMaterialExpression struct */
 static bool SerializeExpressionInput(FArchive& Ar, FExpressionInput& Input)
@@ -751,6 +764,14 @@ const TArray<UTexture*>& FMaterialResource::GetReferencedTextures() const
 	return Material->ExpressionTextureReferences;
 }
 
+void FMaterialResource::AddReferencedObjects(FReferenceCollector& Collector)
+{
+	FMaterial::AddReferencedObjects(Collector);
+
+	Collector.AddReferencedObject(Material);
+	Collector.AddReferencedObject(MaterialInstance);
+}
+
 bool FMaterialResource::GetAllowDevelopmentShaderCompile()const
 {
 	return Material->bAllowDevelopmentShaderCompile;
@@ -1031,6 +1052,11 @@ int32 FMaterialResource::GetBlendableLocation() const
 bool FMaterialResource::GetBlendableOutputAlpha() const
 {
 	return Material->BlendableOutputAlpha;
+}
+
+UMaterialInterface* FMaterialResource::GetMaterialInterface() const 
+{ 
+	return MaterialInstance ? (UMaterialInterface*)MaterialInstance : (UMaterialInterface*)Material;
 }
 
 void FMaterialResource::NotifyCompilationFinished()
@@ -1579,7 +1605,7 @@ bool FMaterial::CacheShaders(const FMaterialShaderMapId& ShaderMapId, EShaderPla
 	{
 		//FMaterialShaderMap::ShaderMapsBeingCompiled.Find(GameThreadShaderMap);
 #if DEBUG_INFINITESHADERCOMPILE
-		UE_LOG(LogTemp, Display, TEXT("Found exisitng compiling shader for material %s, linking to other GameThreadShaderMap 0x%08X%08X"), *GetFriendlyName(), (int)((int64)(GameThreadShaderMap.GetReference()) >> 32), (int)((int64)(GameThreadShaderMap.GetReference())) );
+		UE_LOG(LogTemp, Display, TEXT("Found existing compiling shader for material %s, linking to other GameThreadShaderMap 0x%08X%08X"), *GetFriendlyName(), (int)((int64)(GameThreadShaderMap.GetReference()) >> 32), (int)((int64)(GameThreadShaderMap.GetReference())) );
 #endif
 		OutstandingCompileShaderMapIds.AddUnique(GameThreadShaderMap->GetCompilingId());
 		// Reset the shader map so the default material will be used until the compile finishes.

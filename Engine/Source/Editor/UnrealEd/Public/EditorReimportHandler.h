@@ -4,12 +4,13 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "UObject/GCObject.h"
 #include "Containers/ArrayView.h"
 
 class FReimportHandler;
 
 /** Reimport manager for package resources with associated source files on disk. */
-class FReimportManager
+class FReimportManager : FGCObject
 {
 public:
 	/**
@@ -107,7 +108,9 @@ public:
 
 	/** Opens a file dialog to request a new reimport path */
 	UNREALED_API void GetNewReimportPath(UObject* Obj, TArray<FString>& InOutFilenames);
-
+	
+	/** FGCObject interface */
+	virtual void AddReferencedObjects( FReferenceCollector& Collector ) override;
 private:
 	/** Reimport handlers registered with this manager */
 	TArray<FReimportHandler*> Handlers;
@@ -192,4 +195,8 @@ public:
 	 * Import handlers with higher priority values will take precedent over lower priorities.
 	 */
 	UNREALED_API virtual int32 GetPriority() const;
+
+	/** Returns the UFactory object associated with this reimport handler */
+	virtual const UObject* GetFactoryObject() const { return nullptr; }
+
 };

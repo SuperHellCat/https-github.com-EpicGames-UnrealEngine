@@ -78,7 +78,7 @@ struct FAnalyticsEventAttribute;
 	"bAllowToBeContacted"
  */
 
-namespace LexicalConversion
+namespace Lex
 {
 	inline void FromString( ECrashDescVersions& OutValue, const TCHAR* Buffer )
 	{
@@ -352,7 +352,7 @@ struct FPrimaryCrashProperties
 	FCrashProperty CrashReporterMessage;
 
 	/**
-	 *	Windows only. Non-zero integrity values are to be discounted as "genuine" crashes.
+	 *	Platform-specific UE4 Core value (integer).
 	 */
 	FCrashProperty PlatformCallbackResult;
 
@@ -455,7 +455,7 @@ protected:
 			const FXmlNode* CategoryNode = MainNode->FindChildNode( SecondCategory );
 			if (CategoryNode)
 			{
-				LexicalConversion::FromString( out_ReadValue, *FGenericCrashContext::UnescapeXMLString( CategoryNode->GetContent() ) );
+				Lex::FromString( out_ReadValue, *FGenericCrashContext::UnescapeXMLString( CategoryNode->GetContent() ) );
 			}
 		}
 	}

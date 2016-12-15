@@ -108,6 +108,7 @@ public:
 		, _MaxListHeight(450.0f)
 		, _HasDownArrow( true )
 		, _EnableGamepadNavigationMode(false)
+		, _IsFocusable( true )
 		{}
 		
 		/** Slot for this button's content (optional) */
@@ -150,11 +151,14 @@ public:
 		 */
 		SLATE_ARGUMENT( bool, HasDownArrow )
 
-		/** 
-		 *  When false, directional keys will change the selection. When true, ComboBox 
+		/**
+		 *  When false, directional keys will change the selection. When true, ComboBox
 		 *	must be activated and will only capture arrow input while activated.
 		*/
 		SLATE_ARGUMENT(bool, EnableGamepadNavigationMode)
+
+		/** When true, allows the combo box to receive keyboard focus */
+		SLATE_ARGUMENT( bool, IsFocusable )
 				
 	SLATE_END_ARGS()
 
@@ -219,7 +223,7 @@ public:
 			.ContentPadding( InArgs._ContentPadding )
 			.ForegroundColor( InArgs._ForegroundColor )
 			.OnMenuOpenChanged(this, &SComboBox< OptionType >::OnMenuOpenChanged)
-
+			.IsFocusable(InArgs._IsFocusable)
 		);
 		SetMenuContentWidgetToFocus(ComboListView);
 
@@ -263,7 +267,7 @@ protected:
 	/** Handle key presses that SListView ignores */
 	virtual FReply OnHandleKeyPressed(FKey KeyPressed)
 	{
-		if (KeyPressed == EKeys::Enter || KeyPressed == EKeys::SpaceBar || KeyPressed == EKeys::Gamepad_FaceButton_Bottom)
+		if (KeyPressed == EKeys::Enter || KeyPressed == EKeys::SpaceBar || KeyPressed == EKeys::Virtual_Accept)
 		{
 			TArray<OptionType> SelectedItems = ComboListView->GetSelectedItems();
 			if (SelectedItems.Num() > 0)
@@ -292,7 +296,7 @@ protected:
 			{
 				// The controller's bottom face button must be pressed once to begin manipulating the combobox's value.
 				// Navigation away from the widget is prevented until the button has been pressed again or focus is lost.
-				if (KeyPressed == EKeys::Enter || KeyPressed == EKeys::SpaceBar || KeyPressed == EKeys::Gamepad_FaceButton_Bottom)
+				if (KeyPressed == EKeys::Enter || KeyPressed == EKeys::SpaceBar || KeyPressed == EKeys::Virtual_Accept)
 				{
 					if (bControllerInputCaptured == false)
 					{
@@ -321,7 +325,7 @@ protected:
 					}
 
 				}
-				else if (KeyPressed == EKeys::Escape || KeyPressed == EKeys::Gamepad_FaceButton_Right || KeyPressed == EKeys::BackSpace)
+				else if (KeyPressed == EKeys::Escape || KeyPressed == EKeys::Virtual_Back || KeyPressed == EKeys::BackSpace)
 				{
 					OnMenuOpenChanged(false);
 				}
@@ -365,7 +369,7 @@ protected:
 
 	virtual bool SupportsKeyboardFocus() const override
 	{
-		return true;
+		return bIsFocusable;
 	}
 
 	virtual bool IsInteractable() const

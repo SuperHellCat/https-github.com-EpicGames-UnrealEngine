@@ -296,6 +296,7 @@ class ENGINE_API APlayerController : public AController
 	/** Currently playing haptic effects for both the left and right hand */
 	TSharedPtr<struct FActiveHapticFeedbackEffect> ActiveHapticEffect_Left;
 	TSharedPtr<struct FActiveHapticFeedbackEffect> ActiveHapticEffect_Right;
+	TSharedPtr<struct FActiveHapticFeedbackEffect> ActiveHapticEffect_Gun;
 
 	/** list of names of levels the server is in the middle of sending us for a PrepareMapChange() call */
 	TArray<FName> PendingMapChangeLevelNames;
@@ -1306,9 +1307,11 @@ public:
 	virtual void PostInitializeComponents() override;
 	virtual void EnableInput(class APlayerController* PlayerController) override;
 	virtual void DisableInput(class APlayerController* PlayerController) override;
+protected:
 	virtual void BeginPlay() override;
 	//~ End AActor Interface
 
+public:
 	//~ Begin AController Interface
 	virtual void GameHasEnded(class AActor* EndGameFocus = NULL, bool bIsWinner = false) override;
 	virtual bool IsLocalController() const override;

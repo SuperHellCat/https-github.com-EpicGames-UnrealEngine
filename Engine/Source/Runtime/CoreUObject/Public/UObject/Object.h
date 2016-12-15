@@ -65,7 +65,7 @@ class COREUOBJECT_API UObject : public UObjectBaseUtility
 	* Create a component or subobject only to be used with the editor.
 	* @param	TReturnType					class of return type, all overrides must be of this type
 	* @param	SubobjectName				name of the new component
-	* @param	bTransient					true if the component is being assigned to a transient property
+	* @param	bTransient					true if the component is being assigned to a transient property. This does not make the component itself transient, but does stop it from inheriting parent defaults
 	*/
 	template<class TReturnType>
 	TReturnType* CreateEditorOnlyDefaultSubobject(FName SubobjectName, bool bTransient = false)
@@ -78,7 +78,7 @@ class COREUOBJECT_API UObject : public UObjectBaseUtility
 	* Create a component or subobject
 	* @param	TReturnType					class of return type, all overrides must be of this type
 	* @param	SubobjectName				name of the new component
-	* @param	bTransient					true if the component is being assigned to a transient property
+	* @param	bTransient					true if the component is being assigned to a transient property. This does not make the component itself transient, but does stop it from inheriting parent defaults
 	*/
 	template<class TReturnType>
 	TReturnType* CreateDefaultSubobject(FName SubobjectName, bool bTransient = false)
@@ -92,7 +92,7 @@ class COREUOBJECT_API UObject : public UObjectBaseUtility
 	* @param TReturnType class of return type, all overrides must be of this type
 	* @param TClassToConstructByDefault class to construct by default
 	* @param SubobjectName name of the new component
-	* @param bTransient		true if the component is being assigned to a transient property
+	* @param bTransient		true if the component is being assigned to a transient property. This does not make the component itself transient, but does stop it from inheriting parent defaults
 	*/
 	template<class TReturnType, class TClassToConstructByDefault>
 	TReturnType* CreateDefaultSubobject(FName SubobjectName, bool bTransient = false)
@@ -105,7 +105,7 @@ class COREUOBJECT_API UObject : public UObjectBaseUtility
 	* when a derived class specified DoNotCreateDefaultSubobject with the subobject's name.
 	* @param	TReturnType					class of return type, all overrides must be of this type
 	* @param	SubobjectName				name of the new component
-	* @param	bTransient					true if the component is being assigned to a transient property
+	* @param	bTransient					true if the component is being assigned to a transient property. This does not make the component itself transient, but does stop it from inheriting parent defaults
 	*/
 	template<class TReturnType>
 	TReturnType* CreateOptionalDefaultSubobject(FName SubobjectName, bool bTransient = false)
@@ -119,7 +119,7 @@ class COREUOBJECT_API UObject : public UObjectBaseUtility
 	* when a derived class specified DoNotCreateDefaultSubobject with the subobject's name.
 	* @param	TReturnType					class of return type, all overrides must be of this type
 	* @param	SubobjectName				name of the new component
-	* @param	bTransient					true if the component is being assigned to a transient property
+	* @param	bTransient					true if the component is being assigned to a transient property. This does not make the component itself transient, but does stop it from inheriting parent defaults
 	*/
 	template<class TReturnType>
 	TReturnType* CreateAbstractDefaultSubobject(FName SubobjectName, bool bTransient = false)
@@ -803,6 +803,14 @@ public:
 	UFunction* FindFunctionChecked( FName InName ) const;
 
 	/**
+	 * Given OtherObject (which will be the same type as 'this'), recursively find any matching sub-objects from 'this' that also exist within OtherObject, and add the mappings to ObjectMapping.
+	 *
+	 * @param	OtherObject		The to find matching sub-objects within.
+	 * @param	ObjectMapping	The complete mapping between this object hierarchy and the other object hierarchy.
+	 */
+	virtual void BuildSubobjectMapping(UObject* OtherObject, TMap<UObject*, UObject*>& ObjectMapping) const;
+
+	/**
 	 * Uses the TArchiveObjectReferenceCollector to build a list of all components referenced by this object which have this object as the outer
 	 *
 	 * @param	OutDefaultSubobjects	the array that should be populated with the default subobjects "owned" by this object
@@ -1157,6 +1165,8 @@ public:
 	DECLARE_FUNCTION(execTransformConst);
 	DECLARE_FUNCTION(execStructConst);
 	DECLARE_FUNCTION(execSetArray);
+	DECLARE_FUNCTION(execSetSet);
+	DECLARE_FUNCTION(execSetMap);
 	DECLARE_FUNCTION(execArrayConst);
 
 	// Object construction

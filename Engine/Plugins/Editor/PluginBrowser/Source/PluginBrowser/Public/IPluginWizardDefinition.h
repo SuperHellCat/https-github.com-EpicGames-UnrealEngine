@@ -2,6 +2,11 @@
 
 #pragma once
 
+#include "ModuleDescriptor.h"
+#include "SlateEnums.h"
+#include "SlateTypes.h"
+#include "ITypedTableView.h"
+
 /**
  * Description of a plugin template
  */
@@ -17,17 +22,21 @@ struct FPluginTemplateDescription
 	FString OnDiskPath;
 
 	/** Brush resource for the image that is dynamically loaded */
-	TSharedPtr< FSlateDynamicImageBrush > PluginIconDynamicImageBrush;
+	TSharedPtr< struct FSlateDynamicImageBrush > PluginIconDynamicImageBrush;
 
 	/** Can the plugin contain content? */
 	bool bCanContainContent;
 
+	/** What is the expected ModuleDescriptor type for this plugin?*/
+	EHostType::Type ModuleDescriptorType;
+
 	/** Constructor */
-	FPluginTemplateDescription(FText InName, FText InDescription, FString InOnDiskPath, bool bInCanContainContent = false)
+	FPluginTemplateDescription(FText InName, FText InDescription, FString InOnDiskPath, bool InCanContainContent, EHostType::Type InModuleDescriptorType)
 		: Name(InName)
 		, Description(InDescription)
 		, OnDiskPath(InOnDiskPath)
-		, bCanContainContent(bInCanContainContent)
+		, bCanContainContent(InCanContainContent)
+		, ModuleDescriptorType(InModuleDescriptorType)
 	{
 	}
 };

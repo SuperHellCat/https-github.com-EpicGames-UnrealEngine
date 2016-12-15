@@ -219,6 +219,11 @@ public:
 		return Material->GetMaterialResource(InFeatureLevel);
 	}
 
+	virtual UMaterialInterface* GetMaterialInterface() const override
+	{
+		return Material;
+	}
+
 	virtual bool GetVectorValue(const FName ParameterName, FLinearColor* OutValue, const FMaterialRenderContext& Context) const
 	{
 		const FMaterialResource* MaterialResource = Material->GetMaterialResource(Context.Material.GetFeatureLevel());
@@ -2168,14 +2173,17 @@ void UMaterial::FlushResourceShaderMaps()
 {
 	FPlatformMisc::CreateGuid(StateId);
 
-	UMaterialInterface::IterateOverActiveFeatureLevels([&](ERHIFeatureLevel::Type InFeatureLevel)
+	if(FApp::CanEverRender())
 	{
-		for (int32 QualityLevelIndex = 0; QualityLevelIndex < EMaterialQualityLevel::Num; QualityLevelIndex++)
+		UMaterialInterface::IterateOverActiveFeatureLevels([&](ERHIFeatureLevel::Type InFeatureLevel)
 		{
-			FMaterialResource* CurrentResource = MaterialResources[QualityLevelIndex][InFeatureLevel];
-			CurrentResource->ReleaseShaderMap();
-		}
-	});
+			for(int32 QualityLevelIndex = 0; QualityLevelIndex < EMaterialQualityLevel::Num; QualityLevelIndex++)
+			{
+				FMaterialResource* CurrentResource = MaterialResources[QualityLevelIndex][InFeatureLevel];
+				CurrentResource->ReleaseShaderMap();
+			}
+		});
+	}
 }
 
 void UMaterial::RebuildMaterialFunctionInfo()
@@ -3019,16 +3027,17 @@ void UMaterial::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEve
 
 	TranslucencyDirectionalLightingIntensity = FMath::Clamp(TranslucencyDirectionalLightingIntensity, .1f, 10.0f);
 
-	// Don't want to recompile after a duplicate because it's just been done by PostLoad
-	if( PropertyChangedEvent.ChangeType == EPropertyChangeType::Duplicate )
+	// Don't want to recompile after a duplicate because it's just been done by PostLoad, nor during interactive changes to prevent constant recompliation while spinning properties.
+	if( PropertyChangedEvent.ChangeType == EPropertyChangeType::Duplicate || PropertyChangedEvent.ChangeType == EPropertyChangeType::Interactive )
 	{
 		bRequiresCompilation = false;
 	}
-
-	// Prevent constant recompliation while spinning properties
-	if (bRequiresCompilation && PropertyChangedEvent.ChangeType != EPropertyChangeType::Interactive )
+	
+	if (bRequiresCompilation)
 	{
-		CacheResourceShadersForRendering(true);
+		// When redirecting an object pointer, we trust that the DDC hash will detect the change and that we don't need to force a recompile.
+		const bool bRegenerateId = PropertyChangedEvent.ChangeType != EPropertyChangeType::Redirected;
+		CacheResourceShadersForRendering(bRegenerateId);
 		RecacheMaterialInstanceUniformExpressions(this);
 
 		// Ensure that the ReferencedTextureGuids array is up to date.

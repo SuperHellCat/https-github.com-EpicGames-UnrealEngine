@@ -16,6 +16,7 @@
 #include "Engine/Engine.h"
 #include "Engine/LevelStreaming.h"
 #include "LevelUtils.h"
+#include "PrimitiveSceneProxy.h"
 
 /** A material sprite vertex. */
 struct FMaterialSpriteVertex
@@ -342,5 +343,13 @@ void UMaterialBillboardComponent::SetMaterial(int32 ElementIndex, class UMateria
 		Elements[ElementIndex].Material = Material;
 
 		MarkRenderStateDirty();
+	}
+}
+
+void UMaterialBillboardComponent::GetUsedMaterials(TArray<UMaterialInterface*>& OutMaterials) const
+{
+	for (int32 ElementIndex = 0; ElementIndex < Elements.Num(); ElementIndex++)
+	{
+		OutMaterials.AddUnique(GetMaterial(ElementIndex));
 	}
 }

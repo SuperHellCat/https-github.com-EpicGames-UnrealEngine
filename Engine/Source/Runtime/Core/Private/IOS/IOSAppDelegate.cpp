@@ -356,6 +356,45 @@ void InstallSignalHandlers()
 	return Session.otherAudioPlaying;
 }
 
+- (int)GetAudioVolume
+{
+	float vol = [[AVAudioSession sharedInstance] outputVolume];
+	int roundedVol = (int)((vol * 100.0f) + 0.5f);
+	return roundedVol;
+}
+
+- (bool)AreHeadphonesPluggedIn
+{
+	AVAudioSessionRouteDescription *route = [[AVAudioSession sharedInstance] currentRoute];
+
+	bool headphonesFound = false;
+	for (AVAudioSessionPortDescription *portDescription in route.outputs)
+	{
+		//compare to the iOS constant for headphones
+		if ([portDescription.portType isEqualToString : AVAudioSessionPortHeadphones])
+		{
+			headphonesFound = true;
+			break;
+		}
+	}
+	return headphonesFound;
+}
+
+- (int)GetBatteryLevel
+{
+	UIDevice *myDevice = [UIDevice currentDevice];
+
+#if PLATFORM_TVOS
+	// TVOS does not have a battery, return fully charged
+	return 100;
+#else
+	//must enable battery monitoring in order to get a valid value here
+	[myDevice setBatteryMonitoringEnabled : YES];
+	//battery level is from 0.0 to 1.0, get it in terms of 0-100
+	return ((int)([myDevice batteryLevel] * 100));
+#endif
+}
+
 /**
  * @return the single app delegate object
  */
@@ -442,7 +481,7 @@ void InstallSignalHandlers()
 	FPlatformMisc::EIOSDevice Device = FPlatformMisc::GetIOSDeviceType();
 
 	// iphone6 has specially named files
-    if (Device == FPlatformMisc::IOS_IPhone6 || Device == FPlatformMisc::IOS_IPhone6S)
+    if (Device == FPlatformMisc::IOS_IPhone6 || Device == FPlatformMisc::IOS_IPhone6S || Device == FPlatformMisc::IOS_IPhone7)
 	{
 		[ImageString appendString:@"-IPhone6"];
 		if (!self.bDeviceInPortraitMode)
@@ -450,7 +489,7 @@ void InstallSignalHandlers()
 			[ImageString appendString : @"-Landscape"];
 		}
 	}
-    else if (Device == FPlatformMisc::IOS_IPhone6Plus || Device == FPlatformMisc::IOS_IPhone6SPlus)
+    else if (Device == FPlatformMisc::IOS_IPhone6Plus || Device == FPlatformMisc::IOS_IPhone6SPlus || Device == FPlatformMisc::IOS_IPhone7Plus)
 	{
 		[ImageString appendString : @"-IPhone6Plus"];
 		if (!self.bDeviceInPortraitMode)
@@ -478,6 +517,15 @@ void InstallSignalHandlers()
 		{
 			[ImageString appendString : @"-Portrait-1336"];
 		}
+        
+        if (NativeScale > 1.0f)
+        {
+            [ImageString appendString:@"@2x.png"];
+        }
+        else
+        {
+            [ImageString appendString:@".png"];
+        }
 	}
 	else
 	{
@@ -507,16 +555,16 @@ void InstallSignalHandlers()
 		{
 			[ImageString appendString:@"-Landscape"];
 		}
+        
+        if (NativeScale > 1.0f)
+        {
+            [ImageString appendString:@"@2x.png"];
+        }
+        else
+        {
+            [ImageString appendString:@".png"];
+        }
 	}
-
-    if (NativeScale > 1.0f)
-    {
-        [ImageString appendString:@"@2x.png"];
-    }
-    else
-    {
-        [ImageString appendString:@".png"];
-    }
 
     [path setString: [path stringByAppendingPathComponent:ImageString]];
     UIImage* image = [[UIImage alloc] initWithContentsOfFile: path];

@@ -22,6 +22,7 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "HighResScreenshot.h"
 #include "Slate/SceneViewport.h"
+#include "RenderUtils.h"
 
 DEFINE_LOG_CATEGORY(LogBufferVisualization);
 
@@ -771,7 +772,7 @@ void FSceneView::SetupAntiAliasingMethod()
 
 		if (!bWillApplyTemporalAA || !Family->EngineShowFlags.AntiAliasing || Quality <= 0
 			// Disable antialiasing in GammaLDR mode to avoid jittering.
-			|| (FeatureLevel == ERHIFeatureLevel::ES2 && MobileHDRCvar->GetValueOnAnyThread() == 0)
+			|| (FeatureLevel <= ERHIFeatureLevel::ES3_1 && MobileHDRCvar->GetValueOnAnyThread() == 0)
 			|| (FeatureLevel <= ERHIFeatureLevel::ES3_1 && (MSAAValue > 1))
 			|| Family->EngineShowFlags.VisualizeBloom
 			|| Family->EngineShowFlags.VisualizeDOF)
@@ -906,7 +907,22 @@ void FSceneView::UpdateViewMatrix()
 	ViewMatrices.UpdateViewMatrix(StereoViewLocation, ViewRotation);
 
 	// Derive the view frustum from the view projection matrix.
-	GetViewFrustumBounds(ViewFrustum, ViewMatrices.GetViewProjectionMatrix(), false);
+	if ((StereoPass == eSSP_LEFT_EYE || StereoPass == eSSP_RIGHT_EYE) && Family->MonoParameters.Mode != EMonoscopicFarFieldMode::Off)
+	{
+		// Stereo views use mono far field plane when using mono far field rendering
+		const FPlane FarPlane(ViewMatrices.GetViewOrigin() + GetViewDirection() * Family->MonoParameters.CullingDistance, GetViewDirection());
+		GetViewFrustumBounds(ViewFrustum, ViewMatrices.GetViewProjectionMatrix(), FarPlane, true, false);
+	}
+	else if (StereoPass == eSSP_MONOSCOPIC_EYE)
+	{
+		// Mono view uses near plane
+		GetViewFrustumBounds(ViewFrustum, ViewMatrices.GetViewProjectionMatrix(), true);
+	}
+	else
+	{
+		// Standard rendering setup
+		GetViewFrustumBounds(ViewFrustum, ViewMatrices.GetViewProjectionMatrix(), false);
+	}
 
 	// We need to keep ShadowViewMatrices in sync.
 	ShadowViewMatrices = ViewMatrices;
@@ -1944,12 +1960,12 @@ void FSceneView::EndFinalPostprocessSettings(const FSceneViewInitOptions& ViewIn
 		}
 #endif
 
-
 		// Upscale if needed
 		if (Fraction != 1.0f)
 		{
 			// compute the view rectangle with the ScreenPercentage applied
-			const FIntRect ScreenPercentageAffectedViewRect = ViewInitOptions.GetConstrainedViewRect().Scale(Fraction);
+			FIntRect ScreenPercentageAffectedViewRect = ViewInitOptions.GetConstrainedViewRect().Scale(Fraction);
+			QuantizeSceneBufferSize(ScreenPercentageAffectedViewRect.Max.X, ScreenPercentageAffectedViewRect.Max.Y);
 			SetScaledViewRect(ScreenPercentageAffectedViewRect);
 		}
 	}
@@ -2093,8 +2109,10 @@ void FSceneView::SetupViewRectUniformBufferParameters(FViewUniformShaderParamete
 
 }
 
-void FSceneView::SetupCommonViewUniformBufferParameters(FViewUniformShaderParameters& ViewUniformShaderParameters,
+void FSceneView::SetupCommonViewUniformBufferParameters(
+	FViewUniformShaderParameters& ViewUniformShaderParameters,
 	const FIntPoint& BufferSize,
+	int32 NumMSAASamples,
 	const FIntRect& EffectiveViewRect,
 	const FViewMatrices& InViewMatrices,
 	const FViewMatrices& InPrevViewMatrices) const
@@ -2127,6 +2145,7 @@ void FSceneView::SetupCommonViewUniformBufferParameters(FViewUniformShaderParame
 
 #endif
 
+	ViewUniformShaderParameters.NumSceneColorMSAASamples = NumMSAASamples;
 	ViewUniformShaderParameters.ViewToTranslatedWorld = InViewMatrices.GetOverriddenInvTranslatedViewMatrix();
 	ViewUniformShaderParameters.TranslatedWorldToClip = InViewMatrices.GetTranslatedViewProjectionMatrix();
 	ViewUniformShaderParameters.WorldToClip = InViewMatrices.GetViewProjectionMatrix();
@@ -2292,6 +2311,45 @@ FSceneViewFamily::FSceneViewFamily(const ConstructionValues& CVS)
 	bDrawBaseInfo = true;
 	bNullifyWorldSpacePosition = false;
 #endif
+
+	// Setup mono far field for VR
+	static const auto CVarMono = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("vr.MonoscopicFarField"));
+	bool bIsStereoEnabled = false;
+	if (GEngine != nullptr && GEngine->StereoRenderingDevice.IsValid())
+	{
+		bIsStereoEnabled = GEngine->StereoRenderingDevice->IsStereoEnabledOnNextFrame();
+	}
+
+	const bool bIsMobile = FSceneInterface::GetShadingPath(GetFeatureLevel()) == EShadingPath::Mobile;
+
+	if (bIsStereoEnabled && bIsMobile && CVarMono)
+	{
+		const int32 MonoMode = CVarMono->GetValueOnAnyThread();
+		switch (MonoMode)
+		{
+		case 1:
+			MonoParameters.Mode = EMonoscopicFarFieldMode::On;
+			break;
+
+		case 2:
+			MonoParameters.Mode = EMonoscopicFarFieldMode::StereoOnly;
+			break;
+
+		case 3:
+			MonoParameters.Mode = EMonoscopicFarFieldMode::StereoNoClipping;
+			break;
+
+		case 4:
+			MonoParameters.Mode = EMonoscopicFarFieldMode::MonoOnly;
+			break;
+
+		default:
+			MonoParameters.Mode = EMonoscopicFarFieldMode::Off;
+			break;
+		}
+
+		MonoParameters.CullingDistance = CVS.MonoFarFieldCullingDistance;
+	}
 }
 
 void FSceneViewFamily::ComputeFamilySize()

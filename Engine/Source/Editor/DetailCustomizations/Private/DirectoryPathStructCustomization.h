@@ -9,6 +9,7 @@
 
 class SButton;
 class SComboButton;
+class IMenu;
 
 class FDirectoryPathStructCustomization : public IPropertyTypeCustomization
 {
@@ -26,6 +27,9 @@ private:
 	FText GetDisplayedText(TSharedRef<IPropertyHandle> PropertyHandle) const;
 
 	/** Delegate used to display a directory picker */
+	FReply OnPickContent(TSharedRef<IPropertyHandle> PropertyHandle) ;
+
+	/** Delegate used to display a directory picker */
 	FReply OnPickDirectory(TSharedRef<IPropertyHandle> PropertyHandle, const bool bRelativeToGameContentDir, const bool bUseRelativePaths, const bool bLongPackageName) const;
 
 	/** Check whether that the chosen path is valid */
@@ -38,7 +42,10 @@ private:
 	TSharedPtr<SButton> BrowseButton;
 
 	/** The pick button widget */
-	TSharedPtr<SComboButton> PickerButton;
+	TSharedPtr<SButton> PickerButton;
+
+	/** The pick button popup menu*/
+	TSharedPtr<IMenu> PickerMenu;
 	
 	/** Absolute path to the game content directory */
 	FString AbsoluteGameContentDir;

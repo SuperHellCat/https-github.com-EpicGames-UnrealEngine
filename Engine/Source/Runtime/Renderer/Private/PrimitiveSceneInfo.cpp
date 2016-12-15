@@ -48,6 +48,8 @@ public:
 #if DO_CHECK
 			Mesh.CheckUniformBuffers();
 #endif
+			PrimitiveSceneInfo->Proxy->VerifyUsedMaterial(Mesh.MaterialRenderProxy);
+
 			FStaticMesh* StaticMesh = new(PrimitiveSceneInfo->StaticMeshes) FStaticMesh(
 				PrimitiveSceneInfo,
 				Mesh,
@@ -130,6 +132,8 @@ FPrimitiveSceneInfo::FPrimitiveSceneInfo(UPrimitiveComponent* InComponent,FScene
 	{
 		LODParentComponentId = LODParent->ComponentId;
 	}
+
+	FMemory::Memzero(CachedReflectionCaptureProxies);
 }
 
 FPrimitiveSceneInfo::~FPrimitiveSceneInfo()

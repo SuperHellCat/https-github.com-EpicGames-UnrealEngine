@@ -3,6 +3,7 @@
 #include "AssetViewerSettings.h"
 #include "UObject/UnrealType.h"
 #include "Editor/EditorPerProjectUserSettings.h"
+#include "Editor.h"
 
 
 UAssetViewerSettings::UAssetViewerSettings()
@@ -11,6 +12,14 @@ UAssetViewerSettings::UAssetViewerSettings()
 	Profiles.AddDefaulted(1);
 	Profiles[0].ProfileName = TEXT("Profile_0");
 	NumProfiles = 1;
+}
+
+UAssetViewerSettings::~UAssetViewerSettings()
+{
+	if (GEditor)
+	{
+		GEditor->UnregisterForUndo(this);
+	}
 }
 
 UAssetViewerSettings* UAssetViewerSettings::Get()
@@ -22,12 +31,19 @@ UAssetViewerSettings* UAssetViewerSettings::Get()
 	static bool bInitialized = false;
 	if (!bInitialized)
 	{
+		DefaultSettings->SetFlags(RF_Transactional);
+
 		for (FPreviewSceneProfile& Profile : DefaultSettings->Profiles)
 		{
 			Profile.LoadEnvironmentMap();
 		}
 
 		bInitialized = true;
+
+		if (GEditor)
+		{
+			GEditor->RegisterForUndo(DefaultSettings);
+		}
 	}
 
 	return DefaultSettings;
@@ -74,4 +90,17 @@ void UAssetViewerSettings::PostInitProperties()
 	{
 		ProjectSettings->AssetViewerProfileIndex = 0;
 	}
+}
+
+void UAssetViewerSettings::PostUndo(bool bSuccess)
+{
+	if (bSuccess)
+	{
+		OnAssetViewerSettingsPostUndoEvent.Broadcast();
+	}
+}
+
+void UAssetViewerSettings::PostRedo(bool bSuccess)
+{
+	PostUndo(bSuccess);
 }

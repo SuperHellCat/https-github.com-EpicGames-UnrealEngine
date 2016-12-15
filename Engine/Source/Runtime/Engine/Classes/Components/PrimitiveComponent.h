@@ -221,6 +221,10 @@ public:
 	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category = Rendering)
 	uint32 bRenderInMainPass:1;
 
+	/** If true, this component will be rendered in mono only if an HMD is connected and monoscopic far field rendering is activated. */
+	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category = Rendering)
+	uint32 bRenderInMono:1;
+
 	/** Whether the primitive receives decals. */
 	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category=Rendering)
 	uint32 bReceivesDecals:1;
@@ -1080,7 +1084,7 @@ public:
 	 *	@param      Channel     The new channel for this component to use
 	 */
 	UFUNCTION(BlueprintCallable, Category="Collision")	
-	void SetCollisionObjectType(ECollisionChannel Channel);
+	virtual void SetCollisionObjectType(ECollisionChannel Channel);
 
 	/** Perform a line trace against a single component */
 	UFUNCTION(BlueprintCallable, Category="Collision", meta=(DisplayName = "Line Trace Component", bTraceComplex="true", UnsafeDuringActorConstruction="true"))	
@@ -1097,6 +1101,10 @@ public:
 	/** Sets bRenderInMainPass property and marks the render state dirty. */
 	UFUNCTION(BlueprintCallable, Category = "Rendering")
 	void SetRenderInMainPass(bool bValue);
+
+	/** Sets bRenderInMono property and marks the render state dirty. */
+	UFUNCTION(BlueprintCallable, Category = "Rendering")
+	void SetRenderInMono(bool bValue);
 
 public:
 	static int32 CurrentTag;
@@ -1221,7 +1229,7 @@ public:
 	 * @param LevelContext - Level scope context used to process texture streaming build data.
 	 * @param OutStreamingTextures - Upon return, contains a list of the streaming textures used by the primitive.
 	 */
-	virtual void GetStreamingTextureInfo(FStreamingTextureLevelContext& LevelContext, TArray<FStreamingTexturePrimitiveInfo>& OutStreamingTextures) const {}
+	virtual void GetStreamingTextureInfo(FStreamingTextureLevelContext& LevelContext, TArray<FStreamingTexturePrimitiveInfo>& OutStreamingTextures) const;
 
 	/**
 	 * Call GetStreamingTextureInfo and remove the elements with a NULL texture
@@ -1460,6 +1468,9 @@ protected:
 
 public:
 	virtual bool IsSimulatingPhysics(FName BoneName = NAME_None) const override;
+
+	/** Updates the renderer with the center of mass data */
+	virtual void SendRenderDebugPhysics();
 
 	// End USceneComponentInterface
 

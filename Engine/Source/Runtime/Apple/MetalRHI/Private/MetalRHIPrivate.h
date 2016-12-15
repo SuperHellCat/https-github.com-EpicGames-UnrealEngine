@@ -20,7 +20,7 @@ const uint32 BufferOffsetAlignment = 256;
 const uint32 MetalBufferPageSize = 4096;
 
 #define METAL_API_1_1 (__IPHONE_9_0 || __MAC_10_11)
-#define METAL_API_1_2 ((__IPHONE_10_0 && __IPHONE_OS_VERSION_MIN_REQUIRED >= __IPHONE_10_0) || (__MAC_10_12 && __MAC_OS_X_VERSION_MIN_REQUIRED >= __MAC_10_12))
+#define METAL_API_1_2 ((__IPHONE_10_0 && defined(__IPHONE_OS_VERSION_MIN_REQUIRED) && __IPHONE_OS_VERSION_MIN_REQUIRED >= __IPHONE_10_0) || (__MAC_10_12 && defined(__MAC_OS_X_VERSION_MIN_REQUIRED) && __MAC_OS_X_VERSION_MIN_REQUIRED >= __MAC_10_12))
 
 #if METAL_API_1_1
 #define BUFFER_CACHE_MODE MTLResourceCPUCacheModeWriteCombined
@@ -106,6 +106,36 @@ void UntrackMetalObject(NSObject* Object);
 #define UNTRACK_OBJECT(Stat, Obj) DEC_DWORD_STAT(Stat)
 #endif
 
+enum EMetalIndexType
+{
+	EMetalIndexType_None   = 0,
+	EMetalIndexType_UInt16 = 1,
+	EMetalIndexType_UInt32 = 2
+};
+
+FORCEINLINE MTLIndexType GetMetalIndexType(EMetalIndexType IndexType)
+{
+	switch (IndexType)
+	{
+		case EMetalIndexType_UInt16: return MTLIndexTypeUInt16;
+		case EMetalIndexType_UInt32: return MTLIndexTypeUInt32;
+		case EMetalIndexType_None:
+		{
+			UE_LOG(LogMetal, Fatal, TEXT("There is not equivalent MTLIndexType for EMetalIndexType_None"));
+			return MTLIndexTypeUInt16;
+		}
+	}
+}
+
+FORCEINLINE EMetalIndexType GetRHIMetalIndexType(MTLIndexType IndexType)
+{
+	switch (IndexType)
+	{
+		case MTLIndexTypeUInt16: return EMetalIndexType_UInt16;
+		case MTLIndexTypeUInt32: return EMetalIndexType_UInt32;
+	}
+}
+
 FORCEINLINE int32 GetMetalCubeFace(ECubeFace Face)
 {
 	// According to Metal docs these should match now: https://developer.apple.com/library/prerelease/ios/documentation/Metal/Reference/MTLTexture_Ref/index.html#//apple_ref/c/tdef/MTLTextureType
@@ -144,6 +174,8 @@ FORCEINLINE MTLStoreAction GetMetalRTStoreAction(ERenderTargetStoreAction StoreA
 }
 
 uint32 TranslateElementTypeToSize(EVertexElementType Type);
+
+MTLPrimitiveType TranslatePrimitiveType(uint32 PrimitiveType);
 
 #include "MetalStateCache.h"
 #include "MetalContext.h"

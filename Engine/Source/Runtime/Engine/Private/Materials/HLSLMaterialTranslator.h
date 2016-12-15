@@ -1702,7 +1702,7 @@ protected:
 		// to allow result sharing. In cases where we detect an expression loop we must err on the side of caution
 		if (ExpressionKey.Expression && !ExpressionKey.Expression->ContainsInputLoop() && !ExpressionKey.Expression->IsResultMaterialAttributes(ExpressionKey.OutputIndex))
 		{
-			ExpressionKey.MaterialAttributeID = FGuid(0,0,0,0);
+			ExpressionKey.MaterialAttributeID = FGuid(0, 0, 0, 0);
 		}
 
 		// Check if this expression has already been translated.
@@ -2035,15 +2035,6 @@ protected:
 		}
 
 		return AddCodeChunk(PropertyMeta.Type, *Code);
-	}
-
-	virtual int32 PreviousFrameSwitch(int32 CurrentX, int32 PrevX) override
-	{
-		if (bCompilingPreviousFrame)
-		{
-			return PrevX;
-		}
-		return CurrentX;
 	}
 
 	virtual int32 GameTime(bool bPeriodic, float Period) override
@@ -2690,8 +2681,16 @@ protected:
 
 		case WPT_ExcludeAllShaderOffsets:
 			{
-				bNeedsWorldPositionExcludingShaderOffsets = true;
-				FunctionNamePattern = TEXT("Get<PREV>WorldPosition<NO_MATERIAL_OFFSETS>");
+				if (FeatureLevel < ERHIFeatureLevel::ES3_1)
+				{
+					// World position excluding shader offsets is not available on ES2
+					FunctionNamePattern = TEXT("Get<PREV>WorldPosition");
+				}
+				else
+				{
+					bNeedsWorldPositionExcludingShaderOffsets = true;
+					FunctionNamePattern = TEXT("Get<PREV>WorldPosition<NO_MATERIAL_OFFSETS>");
+				}
 				break;
 			}
 
@@ -2703,8 +2702,16 @@ protected:
 
 		case WPT_CameraRelativeNoOffsets:
 			{
-				bNeedsWorldPositionExcludingShaderOffsets = true;
-				FunctionNamePattern = TEXT("Get<PREV>TranslatedWorldPosition<NO_MATERIAL_OFFSETS>");
+				if (FeatureLevel < ERHIFeatureLevel::ES3_1)
+				{
+					// World position excluding shader offsets is not available on ES2
+					FunctionNamePattern = TEXT("Get<PREV>TranslatedWorldPosition");
+				}
+				else
+				{
+					bNeedsWorldPositionExcludingShaderOffsets = true;
+					FunctionNamePattern = TEXT("Get<PREV>TranslatedWorldPosition<NO_MATERIAL_OFFSETS>");
+				}
 				break;
 			}
 
@@ -3191,7 +3198,8 @@ protected:
 	{
 		const bool bSupportedOnMobile = InSceneTextureId == PPI_PostProcessInput0 ||
 										InSceneTextureId == PPI_CustomDepth ||
-										InSceneTextureId == PPI_SceneDepth;
+										InSceneTextureId == PPI_SceneDepth ||
+										InSceneTextureId == PPI_CustomStencil;
 
 		if (!bSupportedOnMobile	&& ErrorUnlessFeatureLevelSupported(ERHIFeatureLevel::SM4) == INDEX_NONE)
 		{

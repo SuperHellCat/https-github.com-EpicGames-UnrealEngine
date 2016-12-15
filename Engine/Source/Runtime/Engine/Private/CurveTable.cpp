@@ -465,7 +465,7 @@ TArray<FString> UCurveTable::CreateTableFromJSONString(const FString& InString, 
 
 			// Make sure we have a valid float key
 			float EntryKey = 0.0f;
-			if (!LexicalConversion::TryParseString(EntryKey, *ParsedTableRowEntry.Key))
+			if (!Lex::TryParseString(EntryKey, *ParsedTableRowEntry.Key))
 			{
 				OutProblems.Add(FString::Printf(TEXT("Key '%s' on row '%s' is not a float and cannot be parsed."), *ParsedTableRowEntry.Key, *RowName.ToString()));
 				continue;
@@ -540,6 +540,16 @@ bool UCurveTable::IsValidCurve(FRichCurveEditInfo CurveInfo)
 	}
 
 	return false;
+}
+
+
+
+TArray<const UObject*> UCurveTable::GetOwners() const
+{
+	TArray<const UObject*> Owners;
+	Owners.Add(this);
+
+	return Owners;
 }
 
 //////////////////////////////////////////////////////////////////////////

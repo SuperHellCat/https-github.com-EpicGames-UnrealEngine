@@ -37,6 +37,7 @@
 #include "Tickable.h"
 #include "IHeadMountedDisplay.h"
 #include "TimerManager.h"
+#include "Camera/CameraPhotography.h"
 
 //#include "SoundDefinitions.h"
 #include "FXSystem.h"
@@ -58,6 +59,8 @@
 
 // this will log out all of the objects that were ticked in the FDetailedTickStats struct so you can isolate what is expensive
 #define LOG_DETAILED_DUMPSTATS 0
+
+#define LOG_DETAILED_PATHFINDING_STATS 0
 
 /** Global boolean to toggle the log of detailed tick stats. */
 /** Needs LOG_DETAILED_DUMPSTATS to be 1 **/
@@ -133,6 +136,11 @@ extern bool GShouldLogOutAFrameOfSetBodyTransform;
 /** Static array of tickable objects */
 TArray<FTickableGameObject*> FTickableGameObject::TickableObjects;
 bool FTickableGameObject::bIsTickingObjects = false;
+
+#if LOG_DETAILED_PATHFINDING_STATS
+/** Global detailed pathfinding stats. */
+FDetailedTickStats GDetailedPathFindingStats(30, 10, 1, 20, TEXT("pathfinding"));
+#endif
 
 /*-----------------------------------------------------------------------------
 	Detailed tick stats helper classes.
@@ -1425,7 +1433,14 @@ void UWorld::Tick( ELevelTick TickType, float DeltaSeconds )
 				for( FConstPlayerControllerIterator Iterator = GetPlayerControllerIterator(); Iterator; ++Iterator )
 				{
 					APlayerController* PlayerController = Iterator->Get();
-					PlayerController->UpdateCameraManager(DeltaSeconds);
+					if (!bIsPaused || PlayerController->ShouldPerformFullTickWhenPaused())
+					{
+						PlayerController->UpdateCameraManager(DeltaSeconds);
+					}
+					else if (PlayerController->PlayerCameraManager && FCameraPhotographyManager::IsSupported())
+					{
+						PlayerController->PlayerCameraManager->UpdateCameraPhotographyOnly();
+					}
 				}
 
 				if( !bIsPaused )

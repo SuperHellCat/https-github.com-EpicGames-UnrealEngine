@@ -261,6 +261,7 @@ public:
 		FBaseDS(Initializer)
 	{
 		ShadowParameters.Bind(Initializer.ParameterMap);
+		ShadowViewProjectionMatrices.Bind(Initializer.ParameterMap, TEXT("ShadowViewProjectionMatrices"));
 	}
 
 	FShadowDepthDS() {}
@@ -269,6 +270,7 @@ public:
 	{
 		bool bShaderHasOutdatedParameters = FBaseDS::Serialize(Ar);
 		Ar << ShadowParameters;
+		Ar << ShadowViewProjectionMatrices;
 		return bShaderHasOutdatedParameters;
 	}
 
@@ -281,10 +283,31 @@ public:
 	{
 		FBaseDS::SetParameters(RHICmdList, MaterialRenderProxy, View);
 		ShadowParameters.SetDomainShader(RHICmdList, this, View, ShadowInfo, MaterialRenderProxy);
+		
+		if(ShadowViewProjectionMatrices.IsBound())
+		{
+			const FMatrix Translation = FTranslationMatrix(-View.ViewMatrices.GetPreViewTranslation());
+			
+			FMatrix TranslatedShadowViewProjectionMatrices[6];
+			for (int32 FaceIndex = 0; FaceIndex < 6; FaceIndex++)
+			{
+				// Have to apply the pre-view translation to the view - projection matrices
+				TranslatedShadowViewProjectionMatrices[FaceIndex] = Translation * ShadowInfo->OnePassShadowViewProjectionMatrices[FaceIndex];
+			}
+			
+			// Set the view projection matrices that will transform positions from world to cube map face space
+			SetShaderValueArray<FDomainShaderRHIParamRef, FMatrix>(RHICmdList,
+																   GetDomainShader(),
+																   ShadowViewProjectionMatrices,
+																   TranslatedShadowViewProjectionMatrices,
+																   ARRAY_COUNT(TranslatedShadowViewProjectionMatrices)
+																   );
+		}
 	}
 
 private:
 	FShadowDepthShaderParameters ShadowParameters;
+	FShaderParameter ShadowViewProjectionMatrices;
 };
 
 /**
@@ -848,12 +871,18 @@ void FShadowDepthDrawingPolicy<bRenderingReflectiveShadowMaps>::SetSharedState(F
 		bIsTwoSided = true;
 	}
 
+	// Invert culling order when mobile HDR == false.
+	auto ShaderPlatform = GShaderPlatformForFeatureLevel[FeatureLevel];
+	static auto* MobileHDRCvar = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.MobileHDR"));
+	check(MobileHDRCvar);
+	const bool bPlatformReversesCulling = (RHINeedsToSwitchVerticalAxis(ShaderPlatform) && MobileHDRCvar->GetValueOnAnyThread() == 0);
+
 	// Set the rasterizer state only once per draw list bucket, instead of once per mesh in SetMeshRenderState as an optimization
 	RHICmdList.SetRasterizerState(GetStaticRasterizerState<true>(
 		FM_Solid,
 		bIsTwoSided ? CM_None :
 			// Have to flip culling when doing one pass point light shadows for some reason
-			(XOR(View->bReverseCulling, XOR(bReverseCulling, bOnePassPointLightShadow)) ? CM_CCW : CM_CW)
+			(XOR(bPlatformReversesCulling, XOR(View->bReverseCulling, XOR(bReverseCulling, bOnePassPointLightShadow))) ? CM_CCW : CM_CW)
 		));
 }
 

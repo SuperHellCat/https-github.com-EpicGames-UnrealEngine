@@ -33,6 +33,7 @@
 #include "UObject/LinkerPlaceholderFunction.h"
 #include "UObject/StructScriptLoader.h"
 #include "UObject/PropertyHelper.h"
+#include "Serialization/ArchiveScriptReferenceCollector.h"
 
 // This flag enables some expensive class tree validation that is meant to catch mutations of 
 // the class tree outside of SetSuperStruct. It has been disabled because loading blueprints 
@@ -42,14 +43,10 @@
 DEFINE_LOG_CATEGORY(LogScriptSerialization);
 DEFINE_LOG_CATEGORY(LogClass);
 
-#if _MSC_VER == 1900
+#if defined(_MSC_VER) && _MSC_VER == 1900
 	#ifdef PRAGMA_DISABLE_SHADOW_VARIABLE_WARNINGS
 		PRAGMA_DISABLE_SHADOW_VARIABLE_WARNINGS
 	#endif
-#endif
-
-#if !defined(USE_EVENT_DRIVEN_ASYNC_LOAD)
-#error "USE_EVENT_DRIVEN_ASYNC_LOAD must be defined"
 #endif
 
 //////////////////////////////////////////////////////////////////////////
@@ -529,8 +526,7 @@ void UStruct::StaticLink(bool bRelinkExistingProperties)
 void UStruct::GetPreloadDependencies(TArray<UObject*>& OutDeps)
 {
 	Super::GetPreloadDependencies(OutDeps);
-	UStruct* InheritanceSuper = GetInheritanceSuper();
-	OutDeps.Add(InheritanceSuper);
+	OutDeps.Add(SuperStruct);
 
 	for (UField* Field = Children; Field; Field = Field->Next)
 	{
@@ -1042,11 +1038,19 @@ void UStruct::SerializeTaggedProperties(FArchive& Ar, uint8* Data, UStruct* Defa
 			{
 				if (Tag.Type == NAME_StructProperty && PropID == NAME_StructProperty)
 				{
-					FName* NewName = FLinkerLoad::StructNameRedirects.Find(Tag.StructName);
-					FName StructName = CastChecked<UStructProperty>(Property)->Struct->GetFName();
-						if (NewName != nullptr && *NewName == StructName)
+					const FName NewName = FLinkerLoad::FindNewNameForStruct(Tag.StructName);
+					const FName StructName = CastChecked<UStructProperty>(Property)->Struct->GetFName();
+					if (NewName == StructName)
 					{
-						Tag.StructName = *NewName;
+						Tag.StructName = NewName;
+					}
+				}
+				else if ((PropID == NAME_EnumProperty) && ((Tag.Type == NAME_EnumProperty) || (Tag.Type == NAME_ByteProperty)))
+				{
+					const FName NewName = FLinkerLoad::FindNewNameForEnum(Tag.EnumName);
+					if (!NewName.IsNone())
+					{
+						Tag.EnumName = NewName;
 					}
 				}
 			}
@@ -1332,6 +1336,18 @@ void UStruct::AddReferencedObjects(UObject* InThis, FReferenceCollector& Collect
 		// Required by the unified GC when running in the editor
 		Collector.AddReferencedObject( This->SuperStruct, This );
 		Collector.AddReferencedObject( This->Children, This );
+
+		TArray<UObject*> ScriptObjectReferences;
+		FArchiveScriptReferenceCollector ObjectReferenceCollector( ScriptObjectReferences );
+		int32 iCode = 0;
+		while( iCode < This->Script.Num() )
+		{	
+			This->SerializeExpr( iCode, ObjectReferenceCollector );
+		}
+		for( int32 Index = 0; Index < ScriptObjectReferences.Num(); Index++ )
+		{
+			Collector.AddReferencedObject( ScriptObjectReferences[ Index ], This );
+		}
 	}
 
 	//@todo NickW, temp hack to make stale property chains less crashy
@@ -2483,6 +2499,11 @@ FGuid UScriptStruct::GetCustomGuid() const
 	return FGuid();
 }
 
+FString UScriptStruct::GetStructCPPName() const
+{
+	return FString::Printf(TEXT("F%s"), *GetName());
+}
+
 IMPLEMENT_CORE_INTRINSIC_CLASS(UScriptStruct, UStruct,
 	{
 	}
@@ -2656,12 +2677,11 @@ UObject* UClass::CreateDefaultObject()
 		{
 			UObjectForceRegistration(ParentClass);
 			ParentDefaultObject = ParentClass->GetDefaultObject(); // Force the default object to be constructed if it isn't already
-#if USE_EVENT_DRIVEN_ASYNC_LOAD
-			if (!GIsInitialLoad)
+			check(GConfig);
+			if (GEventDrivenLoaderEnabled && EVENT_DRIVEN_ASYNC_LOAD_ACTIVE_AT_RUNTIME)
 			{ 
 				check(ParentDefaultObject && !ParentDefaultObject->HasAnyFlags(RF_NeedLoad));
 			}
-#endif
 		}
 
 		if ( (ParentDefaultObject != NULL) || (this == UObject::StaticClass()) )
@@ -3630,17 +3650,20 @@ void UClass::Serialize( FArchive& Ar )
 	{
 		if (ClassDefaultObject == NULL)
 		{
-
-#if USE_EVENT_DRIVEN_ASYNC_LOAD
+			check(GConfig);
+			if (GEventDrivenLoaderEnabled)
+			{
 			ClassDefaultObject = GetDefaultObject();
 			// we do this later anyway, once we find it and set it in the export table. 
 			// ClassDefaultObject->SetFlags(RF_NeedLoad | RF_NeedPostLoad | RF_NeedPostLoadSubobjects);
-#else
+			}
+			else
+			{
 			UE_LOG(LogClass, Error, TEXT("CDO for class %s did not load!"), *GetPathName());
 			ensure(ClassDefaultObject != NULL);
 			ClassDefaultObject = GetDefaultObject();
 			Ar.ForceBlueprintFinalization();
-#endif
+			}
 		}
 	}
 }
@@ -4951,7 +4974,7 @@ IMPLEMENT_CORE_INTRINSIC_CLASS(UDynamicClass, UClass,
 }
 );
 
-#if _MSC_VER == 1900
+#if defined(_MSC_VER) && _MSC_VER == 1900
 	#ifdef PRAGMA_ENABLE_SHADOW_VARIABLE_WARNINGS
 		PRAGMA_ENABLE_SHADOW_VARIABLE_WARNINGS
 	#endif

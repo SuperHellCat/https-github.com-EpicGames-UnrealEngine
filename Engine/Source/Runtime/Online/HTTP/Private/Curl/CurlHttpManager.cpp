@@ -10,6 +10,7 @@
 #include "Misc/LocalTimestampDirectoryVisitor.h"
 #include "Curl/CurlHttpThread.h"
 #include "Curl/CurlHttp.h"
+#include "Modules/ModuleManager.h"
 
 #if WITH_LIBCURL
 
@@ -197,11 +198,11 @@ bool IsValidIPv4Address(const FString& InString)
 		if (IsUnsignedInteger(AStr) && IsUnsignedInteger(BStr) && IsUnsignedInteger(CStr) && IsUnsignedInteger(DStr) && IsUnsignedInteger(PortStr))
 		{
 			uint32 A, B, C, D, Port;
-			LexicalConversion::FromString(A, *AStr);
-			LexicalConversion::FromString(B, *BStr);
-			LexicalConversion::FromString(C, *CStr);
-			LexicalConversion::FromString(D, *DStr);
-			LexicalConversion::FromString(Port, *PortStr);
+			Lex::FromString(A, *AStr);
+			Lex::FromString(B, *BStr);
+			Lex::FromString(C, *CStr);
+			Lex::FromString(D, *DStr);
+			Lex::FromString(Port, *PortStr);
 
 			if (A < 256 && B < 256 && C < 256 && D < 256 && Port < 65536)
 			{

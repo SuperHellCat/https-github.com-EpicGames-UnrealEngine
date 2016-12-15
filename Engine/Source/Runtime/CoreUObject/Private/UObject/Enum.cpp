@@ -22,6 +22,14 @@ TMap<FName, UEnum*> UEnum::AllEnumNames;
 TMap<FName,TMap<FName,FName> > UEnum::EnumRedirects;
 TMap<FName,TMap<FString,FString> > UEnum::EnumSubstringRedirects;
 
+UEnum::UEnum(const FObjectInitializer& ObjectInitializer)
+	: UField(ObjectInitializer)
+	, CppType()
+	, CppForm(ECppForm::Regular)
+	, EnumDisplayNameFn( nullptr )
+{
+}
+
 void UEnum::Serialize( FArchive& Ar )
 {
 	Ar.UsingCustomVersion(FCoreObjectVersion::GUID);
@@ -99,7 +107,7 @@ FString UEnum::GetBaseEnumNameOnDuplication() const
 	FString BaseEnumName = GetNameByIndex(Names.Num() - 1).ToString();
 
 	// Double check we have a fully qualified name.
-	auto DoubleColonPos = BaseEnumName.Find(TEXT("::"));
+	const int32 DoubleColonPos = BaseEnumName.Find(TEXT("::"), ESearchCase::CaseSensitive);
 	check(DoubleColonPos != INDEX_NONE);
 
 	// Get actual base name.
@@ -167,9 +175,9 @@ FName UEnum::GetNameByValue(int64 InValue) const
 	return NAME_None;
 }
 
-int32 UEnum::GetIndexByName(FName InName) const
+int32 UEnum::GetIndexByName(const FName InName) const
 {
-	int32 Count = Names.Num();
+	const int32 Count = Names.Num();
 	for (int32 Counter = 0; Counter < Count; ++Counter)
 	{
 		if (Names[Counter].Key == InName)
@@ -178,21 +186,22 @@ int32 UEnum::GetIndexByName(FName InName) const
 		}
 	}
 
-	return INDEX_NONE;
+	// Otherwise see if it is in the redirect table
+	return FindEnumRedirects(this, InName);
 }
 
 int64 UEnum::GetValueByName(FName InName) const
 {
-	FString InNameString = InName.ToString();
-	FString DoubleColon = TEXT("::");
-	int32 DoubleColonPosition = InNameString.Find(DoubleColon);
-	bool bIsInNameFullyQualified = DoubleColonPosition != INDEX_NONE;
-	bool bIsEnumFullyQualified = CppForm != ECppForm::Regular;
+	const FString InNameString = InName.ToString();
+	const FString DoubleColon = TEXT("::");
+	const int32 DoubleColonPosition = InNameString.Find(DoubleColon, ESearchCase::CaseSensitive);
+	const bool bIsInNameFullyQualified = (DoubleColonPosition != INDEX_NONE);
+	const bool bIsEnumFullyQualified = (CppForm != ECppForm::Regular);
 
 	if (!bIsInNameFullyQualified && bIsEnumFullyQualified)
 	{
 		// Make InName fully qualified.
-		InName = FName(*GetName().Append(DoubleColon).Append(InNameString));
+		InName = FName(*FString::Printf(TEXT("%s::%s"),*GetName(),*InNameString));
 	}
 	else if (bIsInNameFullyQualified && !bIsEnumFullyQualified)
 	{
@@ -206,6 +215,14 @@ int64 UEnum::GetValueByName(FName InName) const
 		{
 			return Kvp.Value;
 		}
+	}
+
+	const int32 EnumIndex = FindEnumRedirects(this, InName);
+
+	// If we failed to find the entry - try the redirect table
+	if (EnumIndex != INDEX_NONE)
+	{
+		return GetValueByIndex(EnumIndex);
 	}
 
 	return INDEX_NONE;
@@ -278,7 +295,7 @@ void UEnum::AddNamesToMasterList()
 	for (TPair<FName, int64> Kvp : Names)
 	{
 		UEnum* Enum = AllEnumNames.FindRef(Kvp.Key);
-		if (Enum == nullptr)
+		if (Enum == nullptr || Enum->HasAnyFlags(RF_NewerVersionExists))
 		{
 			AllEnumNames.Add(Kvp.Key, this);
 		}
@@ -389,6 +406,11 @@ FText UEnum::GetEnumText(int32 InIndex) const
 	}
 #endif
 
+	if(EnumDisplayNameFn)
+	{
+		return (*EnumDisplayNameFn)(InIndex);
+	}
+
 	return FText::FromString( GetEnumName(InIndex) );
 }
 
@@ -441,12 +463,22 @@ int32 UEnum::FindEnumRedirects(const UEnum* Enum, FName EnumEntryName)
 		{
 			return Enum->GetIndexByName(*NewEntryName);
 		}
-		// if not found, look for long name
+		// if not found, look for long name if short or short name if long
 		else
 		{
 			// Note: This can pollute the name table if the ini is set up incorrectly
-			FName LongName(*GenerateFullEnumName(Enum, *EnumEntryName.ToString()));
-			NewEntryName = ThisEnumRedirects->Find(LongName);
+			const FString EnumEntryString = EnumEntryName.ToString();
+			const int32 DoubleColonIndex = EnumEntryString.Find(TEXT("::"),ESearchCase::CaseSensitive);
+			FName ModifiedName;
+			if (DoubleColonIndex == INDEX_NONE)
+			{
+				ModifiedName = FName(*GenerateFullEnumName(Enum, *EnumEntryName.ToString()));
+			}
+			else
+			{
+				ModifiedName = FName(*EnumEntryString.RightChop(DoubleColonIndex+2));
+			}
+			NewEntryName = ThisEnumRedirects->Find(ModifiedName);
 			if (NewEntryName != nullptr)
 			{
 				return Enum->GetIndexByName(*NewEntryName);

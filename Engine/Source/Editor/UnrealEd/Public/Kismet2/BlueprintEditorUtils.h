@@ -1216,6 +1216,14 @@ public:
 	 */
 	static void FindActorsThatReferenceActor( AActor* InActor, TArray<UClass*>& InClassesToIgnore, TArray<AActor*>& OutReferencingActors );
 
+	/**
+	 * Go through the world and build a map of all actors that are referenced by other actors.
+	 * @param InWorld The world to scan for Actors.
+	 * @param InClassesToIgnore  An array of class types to ignore, even if there is an instance of one that references another Actor
+	 * @param OutReferencingActors A map of Actors that are referenced by a list of other Actors.
+	*/
+	static void GetActorReferenceMap(UWorld* InWorld, TArray<UClass*>& InClassesToIgnore, TMap<AActor*, TArray<AActor*> >& OutReferencingActors);
+
 	//////////////////////////////////////////////////////////////////////////
 	// Diagnostics
 
@@ -1352,9 +1360,6 @@ public:
 	 * @return					TRUE if component instancing data was built, FALSE otherwise.
 	 */
 	static void BuildComponentInstancingData(UActorComponent* ComponentTemplate, FBlueprintCookedComponentInstancingData& OutData);
-
-	/** Switch for hiding TMap/TSet support until stablized */
-	static bool ShouldEnableAdvancedContainers();
 
 protected:
 	// Removes all NULL graph references from the SubGraphs array and recurses thru the non-NULL ones

@@ -122,6 +122,18 @@ public:
 		}
 	}
 
+	/** Returns the owner(s) of the curve */
+	virtual TArray<const UObject*> GetOwners() const override
+	{
+		TArray<const UObject*> Owners;
+		if (BaseSequence.IsValid())
+		{
+			Owners.Add(BaseSequence.Get());
+		}
+
+		return Owners;
+	}
+
 	/** Called to make curve owner transactional */
 	virtual void MakeTransactional() override
 	{
@@ -530,6 +542,11 @@ void SAnimTrackCurvePanel::Construct(const FArguments& InArgs, const TSharedRef<
 	WidgetWidth = InArgs._WidgetWidth;
 	OnGetScrubValue = InArgs._OnGetScrubValue;
 
+	if (InPreviewScene->GetPreviewMeshComponent()->PreviewInstance)
+	{
+		InPreviewScene->GetPreviewMeshComponent()->PreviewInstance->SetKeyCompleteDelegate(FSimpleDelegate::CreateSP(this, &SAnimTrackCurvePanel::HandleKeyComplete));
+	}
+
 	this->ChildSlot
 	[
 		SNew(SVerticalBox)
@@ -670,8 +687,6 @@ void SAnimTrackCurvePanel::UpdatePanel()
 				Tracks.Add(CurrentTrack);
 			}
 		}
-
-		OnCurvesChanged.ExecuteIfBound();
 	}
 }
 
@@ -900,4 +915,10 @@ TSharedRef<SWidget> SAnimTrackCurvePanel::CreateCurveContextMenu(USkeleton::Anim
 
 	return MenuBuilder.MakeWidget();
 }
+
+void SAnimTrackCurvePanel::HandleKeyComplete()
+{
+	UpdatePanel();
+}
+
 #undef LOCTEXT_NAMESPACE

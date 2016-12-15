@@ -16,6 +16,7 @@
 
 
 #if WITH_FREETYPE
+	THIRD_PARTY_INCLUDES_START
 	#include "ft2build.h"
 
 	// FreeType style include
@@ -25,6 +26,7 @@
 	#include FT_BITMAP_H
 	#include FT_ADVANCES_H
 	#include FT_STROKER_H
+	THIRD_PARTY_INCLUDES_END
 #endif // WITH_FREETYPE
 
 
@@ -115,7 +117,7 @@ private:
 class FFreeTypeFace
 {
 public:
-	FFreeTypeFace(const FFreeTypeLibrary* InFTLibrary, TArray<uint8>&& InMemory);
+	FFreeTypeFace(const FFreeTypeLibrary* InFTLibrary, FFontFaceDataConstRef InMemory);
 	FFreeTypeFace(const FFreeTypeLibrary* InFTLibrary, const FString& InFilename);
 	~FFreeTypeFace();
 
@@ -151,7 +153,7 @@ private:
 
 #if WITH_FREETYPE
 	FT_Face FTFace;
-	TArray<uint8> Memory;
+	FFontFaceDataConstPtr Memory;
 
 	/** Custom FreeType stream handler for reading font data via the Unreal File System */
 	struct FFTStreamHandler

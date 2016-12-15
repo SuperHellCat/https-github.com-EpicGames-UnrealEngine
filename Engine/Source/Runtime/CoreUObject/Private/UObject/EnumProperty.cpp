@@ -23,7 +23,7 @@ namespace UE4EnumProperty_Private
 				LogClass,
 				Warning,
 				TEXT("Failed to find valid enum value '%s' for enum type '%s' when converting property '%s' during property loading - setting to '%s'"),
-				*LexicalConversion::ToString(OldValue),
+				*Lex::ToString(OldValue),
 				*Enum->GetName(),
 				*EnumProp->GetName(),
 				*Enum->GetNameByValue(Enum->GetMaxEnumValue()).ToString()
@@ -51,7 +51,7 @@ UEnumProperty::UEnumProperty(const FObjectInitializer& ObjectInitializer, UEnum*
 }
 
 UEnumProperty::UEnumProperty(const FObjectInitializer& ObjectInitializer, ECppProperty, int32 InOffset, uint64 InFlags, UEnum* InEnum)
-	: UProperty(ObjectInitializer, EC_CppProperty, InOffset, InFlags)
+	: UProperty(ObjectInitializer, EC_CppProperty, InOffset, InFlags | CPF_HasGetValueTypeHash)
 	, Enum(InEnum)
 {
 	// This is expected to be set post-construction by AddCppProperty
@@ -61,7 +61,6 @@ UEnumProperty::UEnumProperty(const FObjectInitializer& ObjectInitializer, ECppPr
 void UEnumProperty::AddCppProperty(UProperty* Inner)
 {
 	check(!UnderlyingProp);
-
 	UnderlyingProp = CastChecked<UNumericProperty>(Inner);
 }
 
@@ -389,6 +388,13 @@ bool UEnumProperty::ConvertFromType(const FPropertyTag& Tag, FArchive& Ar, uint8
 
 	return bOutAdvanceProperty;
 }
+
+uint32 UEnumProperty::GetValueTypeHashInternal(const void* Src) const
+{
+	check(UnderlyingProp);
+	return UnderlyingProp->GetValueTypeHash(Src);
+}
+
 
 IMPLEMENT_CORE_INTRINSIC_CLASS(UEnumProperty, UProperty,
 	{

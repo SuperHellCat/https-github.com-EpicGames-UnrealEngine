@@ -309,7 +309,7 @@ public:
 	 * Generate an FText that represents the passed number as currency in the current culture.
 	 * BaseVal is specified in the smallest fractional value of the currency and will be converted for formatting according to the selected culture.
 	 * Keep in mind the CurrencyCode is completely independent of the culture it's displayed in (and they do not imply one another).
-	 * For example: FText::AsCurrencyBase(650, TEXT("EUR")); would return an FText of "â‚¬6.50" in most English cultures (en_US/en_UK) and "6,50â‚¬" in Spanish (es_ES).
+	 * For example: FText::AsCurrencyBase(650, TEXT("EUR")); would return an FText of "<EUR>6.50" in most English cultures (en_US/en_UK) and "6,50<EUR>" in Spanish (es_ES) (where <EUR> is U+20AC)
 	 */
 	static FText AsCurrencyBase(int64 BaseVal, const FString& CurrencyCode, const FCulturePtr& TargetCulture = NULL);
 
@@ -539,6 +539,7 @@ private:
 public:
 	friend class FTextCache;
 	friend class FTextFormatter;
+	friend class FTextFormatData;
 	friend class FTextSnapshot;
 	friend class FTextInspector;
 	friend class FArchive;
@@ -895,11 +896,9 @@ private:
 class CORE_API FTextBuilder
 {
 public:
-
 	FTextBuilder()
 		: IndentCount(0)
 	{
-
 	}
 
 	void Indent()
@@ -976,6 +975,11 @@ public:
 	void Clear()
 	{
 		Report.Empty();
+	}
+
+	bool IsEmpty()
+	{
+		return Report.IsEmpty();
 	}
 
 	FText ToText() const

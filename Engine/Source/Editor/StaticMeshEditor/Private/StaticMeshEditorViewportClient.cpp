@@ -439,6 +439,14 @@ void FStaticMeshEditorViewportClient::Draw(const FSceneView* View,FPrimitiveDraw
 {
 	FEditorViewportClient::Draw(View, PDI);
 
+	TSharedPtr<IStaticMeshEditor> StaticMeshEditor = StaticMeshEditorPtr.Pin();
+
+	if(!StaticMesh->RenderData->LODResources.IsValidIndex(StaticMeshEditor->GetCurrentLODIndex()))
+	{
+		// Guard against corrupted meshes
+		return;
+	}
+
 	if (bShowCollision && StaticMesh->BodySetup)
 	{
 		// Ensure physics mesh is created before we try and draw it
@@ -457,7 +465,7 @@ void FStaticMeshEditorViewportClient::Draw(const FSceneView* View,FPrimitiveDraw
 			HSMECollisionProxy* HitProxy = new HSMECollisionProxy(KPT_Sphere, i);
 			PDI->SetHitProxy(HitProxy);
 
-			const FColor CollisionColor = StaticMeshEditorPtr.Pin()->IsSelectedPrim(HitProxy->PrimData) ? SelectedColor : UnselectedColor;
+			const FColor CollisionColor = StaticMeshEditor->IsSelectedPrim(HitProxy->PrimData) ? SelectedColor : UnselectedColor;
 			const FKSphereElem& SphereElem = AggGeom->SphereElems[i];
 			const FTransform ElemTM = SphereElem.GetTransform();
 			SphereElem.DrawElemWire(PDI, ElemTM, VectorScaleOne, CollisionColor);
@@ -470,7 +478,7 @@ void FStaticMeshEditorViewportClient::Draw(const FSceneView* View,FPrimitiveDraw
 			HSMECollisionProxy* HitProxy = new HSMECollisionProxy(KPT_Box, i);
 			PDI->SetHitProxy(HitProxy);
 
-			const FColor CollisionColor = StaticMeshEditorPtr.Pin()->IsSelectedPrim(HitProxy->PrimData) ? SelectedColor : UnselectedColor;
+			const FColor CollisionColor = StaticMeshEditor->IsSelectedPrim(HitProxy->PrimData) ? SelectedColor : UnselectedColor;
 			const FKBoxElem& BoxElem = AggGeom->BoxElems[i];
 			const FTransform ElemTM = BoxElem.GetTransform();
 			BoxElem.DrawElemWire(PDI, ElemTM, VectorScaleOne, CollisionColor);
@@ -483,7 +491,7 @@ void FStaticMeshEditorViewportClient::Draw(const FSceneView* View,FPrimitiveDraw
 			HSMECollisionProxy* HitProxy = new HSMECollisionProxy(KPT_Sphyl, i);
 			PDI->SetHitProxy(HitProxy);
 
-			const FColor CollisionColor = StaticMeshEditorPtr.Pin()->IsSelectedPrim(HitProxy->PrimData) ? SelectedColor : UnselectedColor;
+			const FColor CollisionColor = StaticMeshEditor->IsSelectedPrim(HitProxy->PrimData) ? SelectedColor : UnselectedColor;
 			const FKSphylElem& SphylElem = AggGeom->SphylElems[i];
 			const FTransform ElemTM = SphylElem.GetTransform();
 			SphylElem.DrawElemWire(PDI, ElemTM, VectorScaleOne, CollisionColor);
@@ -496,7 +504,7 @@ void FStaticMeshEditorViewportClient::Draw(const FSceneView* View,FPrimitiveDraw
 			HSMECollisionProxy* HitProxy = new HSMECollisionProxy(KPT_Convex, i);
 			PDI->SetHitProxy(HitProxy);
 
-			const FColor CollisionColor = StaticMeshEditorPtr.Pin()->IsSelectedPrim(HitProxy->PrimData) ? SelectedColor : UnselectedColor;
+			const FColor CollisionColor = StaticMeshEditor->IsSelectedPrim(HitProxy->PrimData) ? SelectedColor : UnselectedColor;
 			const FKConvexElem& ConvexElem = AggGeom->ConvexElems[i];
 			const FTransform ElemTM = ConvexElem.GetTransform();
 			ConvexElem.DrawElemWire(PDI, ElemTM, 1.f, CollisionColor);
@@ -543,7 +551,7 @@ void FStaticMeshEditorViewportClient::Draw(const FSceneView* View,FPrimitiveDraw
 
 	if( bDrawNormals || bDrawTangents || bDrawBinormals || bDrawVertices )
 	{
-		FStaticMeshLODResources& LODModel = StaticMesh->RenderData->LODResources[StaticMeshEditorPtr.Pin()->GetCurrentLODIndex()];
+		FStaticMeshLODResources& LODModel = StaticMesh->RenderData->LODResources[StaticMeshEditor->GetCurrentLODIndex()];
 		FIndexArrayView Indices = LODModel.IndexBuffer.GetArrayView();
 		uint32 NumIndices = Indices.Num();
 
@@ -662,7 +670,7 @@ static void DrawAngles(FCanvas* Canvas, int32 XPos, int32 YPos, EAxisList::Type 
 
 void FStaticMeshEditorViewportClient::DrawCanvas( FViewport& InViewport, FSceneView& View, FCanvas& Canvas )
 {
-#if TODO_STATICMESH
+#ifdef TODO_STATICMESH
 	if ( StaticMesh->bHasBeenSimplified && SimplygonLogo && SimplygonLogo->Resource )
 	{
 		const float LogoSizeX = 64.0f;
@@ -815,7 +823,7 @@ void FStaticMeshEditorViewportClient::DrawCanvas( FViewport& InViewport, FSceneV
 
 	StaticMeshEditorViewport->PopulateOverlayText(TextItems);
 
-	if(bDrawUVs)
+	if(bDrawUVs && StaticMesh->RenderData->LODResources.Num() > 0)
 	{
 		const int32 YPos = 160;
 		DrawUVsForMesh(Viewport, &Canvas, YPos);

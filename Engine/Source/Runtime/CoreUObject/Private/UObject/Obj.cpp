@@ -821,15 +821,9 @@ bool UObject::ConditionalFinishDestroy()
 	}
 }
 
-#if !defined(USE_EVENT_DRIVEN_ASYNC_LOAD)
-#error "USE_EVENT_DRIVEN_ASYNC_LOAD must be defined"
-#endif
-
 void UObject::ConditionalPostLoad()
 {
-#if USE_EVENT_DRIVEN_ASYNC_LOAD
-	check(!HasAnyFlags(RF_NeedLoad)); //@todoio Added this as "nicks rule"
-#endif
+	check(!GEventDrivenLoaderEnabled || !HasAnyFlags(RF_NeedLoad)); //@todoio Added this as "nicks rule"
 									  // PostLoad only if the object needs it and has already been serialized
 	//@todoio note this logic should be unchanged compared to main
 	if (HasAnyFlags(RF_NeedPostLoad))
@@ -875,25 +869,18 @@ void UObject::ConditionalPostLoad()
 	}
 }
 
-#if !defined(USE_EVENT_DRIVEN_ASYNC_LOAD)
-#error "USE_EVENT_DRIVEN_ASYNC_LOAD must be defined."
-#endif
-
-
 void UObject::PostLoadSubobjects( FObjectInstancingGraph* OuterInstanceGraph/*=NULL*/ )
 {
-#if USE_EVENT_DRIVEN_ASYNC_LOAD
-	check(!HasAnyFlags(RF_NeedLoad));
-#endif
+	check(!GEventDrivenLoaderEnabled || !HasAnyFlags(RF_NeedLoad));
+
 	if( GetClass()->HasAnyClassFlags(CLASS_HasInstancedReference) )
 	{
 		UObject* ObjOuter = GetOuter();
 		// make sure our Outer has already called ConditionalPostLoadSubobjects
 		if (ObjOuter != NULL && ObjOuter->HasAnyFlags(RF_NeedPostLoadSubobjects) )
 		{
-#if USE_EVENT_DRIVEN_ASYNC_LOAD
-			check(!ObjOuter->HasAnyFlags(RF_NeedLoad));
-#endif
+			check(!GEventDrivenLoaderEnabled || !ObjOuter->HasAnyFlags(RF_NeedLoad));
+
 			if (ObjOuter->HasAnyFlags(RF_NeedPostLoad) )
 			{
 				ObjOuter->ConditionalPostLoad();
@@ -1182,6 +1169,42 @@ void UObject::SerializeScriptProperties( FArchive& Ar ) const
 		Ar.StopSerializingDefaults();
 	}
 	Ar.MarkScriptSerializationEnd(this);
+}
+
+
+void UObject::BuildSubobjectMapping(UObject* OtherObject, TMap<UObject*, UObject*>& ObjectMapping) const
+{
+	UPackage* ThisPackage = GetOutermost();
+	UPackage* OtherPackage = OtherObject->GetOutermost();
+
+	ForEachObjectWithOuter(this, [&](UObject* InSubObject)
+	{
+		if (ObjectMapping.Contains(InSubObject))
+		{
+			return;
+		}
+
+		FString NewSubObjectName = InSubObject->GetName();
+
+		UClass* OtherSubObjectClass = InSubObject->GetClass();
+		if (OtherSubObjectClass->ClassGeneratedBy && OtherSubObjectClass->ClassGeneratedBy->GetOutermost() == ThisPackage)
+		{
+			// This is a generated class type, so we actually need to use the new generated class type from the new package otherwise our type check will fail
+			FString NewClassName = OtherSubObjectClass->GetPathName(ThisPackage);
+			NewClassName = FString::Printf(TEXT("%s.%s"), *OtherPackage->GetName(), *NewClassName);
+
+			OtherSubObjectClass = LoadObject<UClass>(OtherPackage, *NewClassName);
+		}
+
+		//UObject* OtherSubObject = StaticLoadObject(OtherSubObjectClass, OtherObject, *NewSubObjectName, nullptr, LOAD_Quiet | LOAD_NoRedirects, nullptr, true);
+		UObject* OtherSubObject = StaticFindObjectFast(OtherSubObjectClass, OtherObject, *NewSubObjectName);
+		ObjectMapping.Emplace(InSubObject, OtherSubObject);
+
+		if (OtherSubObject)
+		{
+			InSubObject->BuildSubobjectMapping(OtherSubObject, ObjectMapping);
+		}
+	}, false, RF_NoFlags, EInternalObjectFlags::PendingKill);
 }
 
 
@@ -1474,7 +1497,7 @@ void UObject::GetAssetRegistryTagMetadata(TMap<FName, FAssetRegistryTagMetadata>
 }
 #endif
 
-bool UObject::IsAsset () const
+bool UObject::IsAsset() const
 {
 	// Assets are not transient or CDOs. They must be public.
 	const bool bHasValidObjectFlags = !HasAnyFlags(RF_Transient | RF_ClassDefaultObject) && HasAnyFlags(RF_Public);
@@ -1484,8 +1507,8 @@ bool UObject::IsAsset () const
 		// Don't count objects embedded in other objects (e.g. font textures, sequences, material expressions)
 		if ( UPackage* LocalOuterPackage = dynamic_cast<UPackage*>(GetOuter()) )
 		{
-			// Also exclude any objects found in the transient package.
-			return LocalOuterPackage != GetTransientPackage();
+			// Also exclude any objects found in the transient package, or in a package that is transient.
+			return LocalOuterPackage != GetTransientPackage() && !LocalOuterPackage->HasAnyFlags(RF_Transient);
 		}
 	}
 
@@ -3825,7 +3848,7 @@ void StaticUObjectInit()
 	UObjectBaseInit();
 
 	// Allocate special packages.
-	GObjTransientPkg = NewObject<UPackage>(nullptr, TEXT("/Engine/Transient"));
+	GObjTransientPkg = NewObject<UPackage>(nullptr, TEXT("/Engine/Transient"), RF_Transient);
 	GObjTransientPkg->AddToRoot();
 
 	if( FParse::Param( FCommandLine::Get(), TEXT("VERIFYGC") ) )

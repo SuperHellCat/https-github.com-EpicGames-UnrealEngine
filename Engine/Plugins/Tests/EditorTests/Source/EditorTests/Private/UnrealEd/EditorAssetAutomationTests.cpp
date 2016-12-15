@@ -17,6 +17,7 @@
 #include "Animation/Skeleton.h"
 #include "Curves/CurveBase.h"
 #include "Curves/CurveFloat.h"
+#include "GameFramework/ForceFeedbackAttenuation.h"
 #include "GameFramework/ForceFeedbackEffect.h"
 #include "Sound/SoundAttenuation.h"
 #include "Animation/AnimMontage.h"
@@ -63,6 +64,7 @@
 #include "Factories/DialogueVoiceFactory.h"
 #include "Factories/DialogueWaveFactory.h"
 #include "Factories/EnumFactory.h"
+#include "Factories/ForceFeedbackAttenuationFactory.h"
 #include "Factories/ForceFeedbackEffectFactory.h"
 #include "Factories/InterpDataFactoryNew.h"
 #include "Factories/MaterialFactoryNew.h"
@@ -609,6 +611,7 @@ bool FAssetEditorTest::RunTest(const FString& Parameters)
 	ASSET_TEST_CREATE(UDialogueVoice, UDialogueVoiceFactory, DV, )
 	ASSET_TEST_CREATE(UDialogueWave, UDialogueWaveFactory, DW, )
 	ASSET_TEST_CREATE(UReverbEffect, UReverbEffectFactory, RE, )
+	ASSET_TEST_CREATE(UForceFeedbackAttenuation, UForceFeedbackAttenuationFactory, FFA, )
 	ASSET_TEST_CREATE(USoundAttenuation, USoundAttenuationFactory, SA, )
 	ASSET_TEST_CREATE(USoundClass, USoundClassFactory, SC, )
 	ASSET_TEST_CREATE(USoundCue, USoundCueFactoryNew, Scue, )
@@ -621,6 +624,7 @@ bool FAssetEditorTest::RunTest(const FString& Parameters)
 	ASSET_TEST_CREATE(UBlueprint, UBlueprintMacroFactory, MPL, FactoryInst->ParentClass = AActor::StaticClass();)
 	ASSET_TEST_CREATE(UCameraAnim, UCameraAnimFactory, CA, )
 	ASSET_TEST_CREATE(UCurveBase, UCurveFactory, C, FactoryInst->CurveClass = UCurveFloat::StaticClass();)
+	FModuleManager::Get().LoadModule(TEXT("GameplayAbilities"));
 	UClass* GameplayAbilityClass = StaticLoadClass(UObject::StaticClass(), NULL, TEXT("GameplayAbilities.GameplayAbilitySet"), NULL, LOAD_None, NULL);
 	if (GameplayAbilityClass)
 	{

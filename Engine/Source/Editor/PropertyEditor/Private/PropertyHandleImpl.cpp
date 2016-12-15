@@ -453,7 +453,9 @@ FPropertyAccess::Result FPropertyValueImpl::ImportText( const TArray<FObjectBase
 					
 					if (bIsInContainer)
 					{
-						if ( SetProp->HasElement( ParentNode->GetValueBaseAddress((uint8*)Cur.Object), Cur.BaseAddress, InValues[ObjectIndex])  )
+						FScriptSetHelper SetHelper(SetProp, ParentNode->GetValueBaseAddress((uint8*)Cur.Object));
+
+						if ( SetHelper.HasElement(Cur.BaseAddress, InValues[ObjectIndex]) )
 						{
 							// Duplicate element in the set
 							ShowInvalidOperationError(LOCTEXT("DuplicateSetElement", "Duplicate elements are not allowed in Set properties."));
@@ -469,7 +471,9 @@ FPropertyAccess::Result FPropertyValueImpl::ImportText( const TArray<FObjectBase
 
 					if (bIsInContainer)
 					{
-						if ( MapProperty->HasKey(ParentNode->GetValueBaseAddress((uint8*)Cur.Object), Cur.BaseAddress, InValues[ObjectIndex]) )
+						FScriptMapHelper MapHelper(MapProperty, ParentNode->GetValueBaseAddress((uint8*)Cur.Object));
+
+						if ( MapHelper.HasKey(Cur.BaseAddress, InValues[ObjectIndex]) )
 						{
 							// Duplicate key in the map
 							ShowInvalidOperationError(LOCTEXT("DuplicateMapKey", "Duplicate keys are not allowed in Map properties."));
@@ -1303,11 +1307,11 @@ void FPropertyValueImpl::ClearChildren()
 			// Begin a property edit transaction.
 			FScopedTransaction Transaction( NSLOCTEXT("UnrealEd", "ClearChildren", "Clear Children") );
 			FObjectPropertyNode* ObjectNode = PropertyNodePin->FindObjectItemParent();
-			UArrayProperty* Array = Cast<UArrayProperty>(NodeProperty);
-			USetProperty* Set = Cast<USetProperty>(NodeProperty);
-			UMapProperty* Map = Cast<UMapProperty>(NodeProperty);
+			UArrayProperty* ArrayProperty = Cast<UArrayProperty>(NodeProperty);
+			USetProperty* SetProperty = Cast<USetProperty>(NodeProperty);
+			UMapProperty* MapProperty = Cast<UMapProperty>(NodeProperty);
 
-			check(Array || Set || Map);
+			check(ArrayProperty || SetProperty || MapProperty);
 
 			for ( int32 i = 0 ; i < ReadAddresses.Num() ; ++i )
 			{
@@ -1337,19 +1341,82 @@ void FPropertyValueImpl::ClearChildren()
 						TopLevelObjects.Add(Obj);
 					}
 
-					if (Array)
+					if (ArrayProperty)
 					{
-						FScriptArrayHelper	ArrayHelper(Array, Addr);
+						FScriptArrayHelper ArrayHelper(ArrayProperty, Addr);
+
+						// If the inner property is an instanced component property we must move the old components to the 
+						// transient package so resetting owned components on the parent doesn't find them
+						UObjectProperty* InnerObjectProperty = Cast<UObjectProperty>(ArrayProperty->Inner);
+						if (InnerObjectProperty && InnerObjectProperty->HasAnyPropertyFlags(CPF_InstancedReference) && InnerObjectProperty->PropertyClass->IsChildOf(UActorComponent::StaticClass()))
+						{
+							const int32 ArraySize = ArrayHelper.Num();
+							for (int32 Index = 0; Index < ArraySize; ++Index)
+							{
+								if (UActorComponent* Component = *reinterpret_cast<UActorComponent**>(ArrayHelper.GetRawPtr(Index)))
+								{
+									Component->Modify();
+									Component->Rename(nullptr, GetTransientPackage(), REN_DontCreateRedirectors);
+								}
+							}
+						}
+
 						ArrayHelper.EmptyValues();
 					}
-					else if (Set)
+					else if (SetProperty)
 					{
-						FScriptSetHelper	SetHelper(Set, Addr);
+						FScriptSetHelper SetHelper(SetProperty, Addr);
+
+						// If the element property is an instanced component property we must move the old components to the 
+						// transient package so resetting owned components on the parent doesn't find them
+						UObjectProperty* ElementObjectProperty = Cast<UObjectProperty>(SetProperty->ElementProp);
+						if (ElementObjectProperty && ElementObjectProperty->HasAnyPropertyFlags(CPF_InstancedReference) && ElementObjectProperty->PropertyClass->IsChildOf(UActorComponent::StaticClass()))
+						{
+							int32 ElementsToRemove = SetHelper.Num();
+							int32 Index = 0;
+							while (ElementsToRemove > 0)
+							{
+								if (SetHelper.IsValidIndex(Index))
+								{
+									if (UActorComponent* Component = *reinterpret_cast<UActorComponent**>(SetHelper.GetElementPtr(Index)))
+									{
+										Component->Modify();
+										Component->Rename(nullptr, GetTransientPackage(), REN_DontCreateRedirectors);
+									}
+									--ElementsToRemove;
+								}
+								++Index;
+							}
+						}
+
 						SetHelper.EmptyElements();
 					}
-					else if (Map)
+					else if (MapProperty)
 					{
-						FScriptMapHelper	MapHelper(Map, Addr);
+						FScriptMapHelper MapHelper(MapProperty, Addr);
+
+						// If the map's value property is an instanced component property we must move the old components to the 
+						// transient package so resetting owned components on the parent doesn't find them
+						UObjectProperty* ValueObjectProperty = Cast<UObjectProperty>(MapProperty->ValueProp);
+						if (ValueObjectProperty && ValueObjectProperty->HasAnyPropertyFlags(CPF_InstancedReference) && ValueObjectProperty->PropertyClass->IsChildOf(UActorComponent::StaticClass()))
+						{
+							int32 ElementsToRemove = MapHelper.Num();
+							int32 Index = 0;
+							while (ElementsToRemove > 0)
+							{
+								if (MapHelper.IsValidIndex(Index))
+								{
+									if (UActorComponent* Component = *reinterpret_cast<UActorComponent**>(MapHelper.GetValuePtr(Index)))
+									{
+										Component->Modify();
+										Component->Rename(nullptr, GetTransientPackage(), REN_DontCreateRedirectors);
+									}
+									--ElementsToRemove;
+								}
+								++Index;
+							}
+						}
+
 						MapHelper.EmptyValues();
 					}
 				}
@@ -1516,17 +1583,56 @@ void FPropertyValueImpl::DeleteChild( TSharedPtr<FPropertyNode> ChildNodeToDelet
 				if (ArrayProperty)
 				{
 					FScriptArrayHelper ArrayHelper(ArrayProperty, Address);
+
+					// If the inner property is an instanced component property we must move the old component to the 
+					// transient package so resetting owned components on the parent doesn't find it
+					UObjectProperty* InnerObjectProperty = Cast<UObjectProperty>(ArrayProperty->Inner);
+					if (InnerObjectProperty && InnerObjectProperty->HasAnyPropertyFlags(CPF_InstancedReference) && InnerObjectProperty->PropertyClass->IsChildOf(UActorComponent::StaticClass()))
+					{
+						if (UActorComponent* Component = *reinterpret_cast<UActorComponent**>(ArrayHelper.GetRawPtr(ChildNodePtr->GetArrayIndex())))
+						{
+							Component->Modify();
+							Component->Rename(nullptr, GetTransientPackage(), REN_DontCreateRedirectors);
+						}
+					}
+
 					ArrayHelper.RemoveValues(ChildNodePtr->GetArrayIndex());
 				}
 				else if (SetProperty)
 				{
 					FScriptSetHelper SetHelper(SetProperty, Address);
+
+					// If the element property is an instanced component property we must move the old component to the 
+					// transient package so resetting owned components on the parent doesn't find it
+					UObjectProperty* ElementObjectProperty = Cast<UObjectProperty>(SetProperty->ElementProp);
+					if (ElementObjectProperty && ElementObjectProperty->HasAnyPropertyFlags(CPF_InstancedReference) && ElementObjectProperty->PropertyClass->IsChildOf(UActorComponent::StaticClass()))
+					{
+						if (UActorComponent* Component = *reinterpret_cast<UActorComponent**>(SetHelper.GetElementPtr(ChildNodePtr->GetArrayIndex())))
+						{
+							Component->Modify();
+							Component->Rename(nullptr, GetTransientPackage(), REN_DontCreateRedirectors);
+						}
+					}
+
 					SetHelper.RemoveAt(ChildNodePtr->GetArrayIndex());
 					SetHelper.Rehash();
 				}
 				else if (MapProperty)
 				{
 					FScriptMapHelper MapHelper(MapProperty, Address);
+
+					// If the map's value property is an instanced component property we must move the old component to the 
+					// transient package so resetting owned components on the parent doesn't find it
+					UObjectProperty* ValueObjectProperty = Cast<UObjectProperty>(MapProperty->ValueProp);
+					if (ValueObjectProperty && ValueObjectProperty->HasAnyPropertyFlags(CPF_InstancedReference) && ValueObjectProperty->PropertyClass->IsChildOf(UActorComponent::StaticClass()))
+					{
+						if (UActorComponent* Component = *reinterpret_cast<UActorComponent**>(MapHelper.GetValuePtr(ChildNodePtr->GetArrayIndex())))
+						{
+							Component->Modify();
+							Component->Rename(nullptr, GetTransientPackage(), REN_DontCreateRedirectors);
+						}
+					}
+
 					MapHelper.RemoveAt(ChildNodePtr->GetArrayIndex());
 					MapHelper.Rehash();
 				}
@@ -2257,8 +2363,6 @@ bool FPropertyHandleBase::GeneratePossibleValues(TArray< TSharedPtr<FString> >& 
 		//NumEnums() - 1, because the last item in an enum is the _MAX item
 		for( int32 EnumIndex = 0; EnumIndex < Enum->NumEnums() - 1; ++EnumIndex )
 		{
-			FString EnumValueName;
-
 			// Ignore hidden enums
 			bool bShouldBeHidden = Enum->HasMetaData(TEXT("Hidden"), EnumIndex ) || Enum->HasMetaData(TEXT("Spacer"), EnumIndex );
 			if (!bShouldBeHidden && ValidEnumValues.Num() != 0)
@@ -2266,30 +2370,39 @@ bool FPropertyHandleBase::GeneratePossibleValues(TArray< TSharedPtr<FString> >& 
 				bShouldBeHidden = ValidEnumValues.Find(Enum->GetEnum(EnumIndex)) == INDEX_NONE;
 			}
 
+			if (!bShouldBeHidden)
+			{
+				bShouldBeHidden = IsHidden(Enum->GetEnumName(EnumIndex));
+			}
+
 			if( !bShouldBeHidden )
 			{
 				// See if we specified an alternate name for this value using metadata
-				EnumValueName = Enum->GetDisplayNameText( EnumIndex ).ToString();
+				FString EnumName = Enum->GetEnumName(EnumIndex);
+				FString EnumDisplayName = Enum->GetDisplayNameText(EnumIndex).ToString();
 
+				FText RestrictionTooltip;
+				const bool bIsRestricted = GenerateRestrictionToolTip(EnumName, RestrictionTooltip);
+				OutRestrictedItems.Add(bIsRestricted);
 
-				if( EnumValueName.Len() == 0 ) 
+				if (EnumDisplayName.Len() == 0)
 				{
-					EnumValueName = Enum->GetEnumName(EnumIndex);
+					EnumDisplayName = MoveTemp(EnumName);
 				}
 				else
 				{
 					bUsesAlternateDisplayValues = true;
 				}
 
-				FText RestrictionTooltip;
-				bool bIsRestricted = GenerateRestrictionToolTip(EnumValueName, RestrictionTooltip);
-				OutRestrictedItems.Add(bIsRestricted);
-
-				TSharedPtr< FString > EnumStr( new FString( EnumValueName ) );
-				OutOptionStrings.Add( EnumStr );
+				TSharedPtr< FString > EnumStr(new FString(EnumDisplayName));
+				OutOptionStrings.Add(EnumStr);
 
 				FText EnumValueToolTip = bIsRestricted ? RestrictionTooltip : Enum->GetToolTipText(EnumIndex);
-				OutToolTips.Add( EnumValueToolTip );
+				OutToolTips.Add(MoveTemp(EnumValueToolTip));
+			}
+			else
+			{
+				OutToolTips.Add(FText());
 			}
 		}
 	}
@@ -2397,6 +2510,46 @@ bool FPropertyHandleBase::IsRestricted(const FString& Value, TArray<FText>& OutR
 	if( PropertyNode.IsValid() )
 	{
 		return PropertyNode->IsRestricted(Value, OutReasons);
+	}
+	return false;
+}
+
+bool FPropertyHandleBase::IsHidden(const FString& Value) const
+{
+	TSharedPtr<FPropertyNode> PropertyNode = Implementation->GetPropertyNode();
+	if( PropertyNode.IsValid() )
+	{
+		return PropertyNode->IsHidden(Value);
+	}
+	return false;
+}
+
+bool FPropertyHandleBase::IsHidden(const FString& Value, TArray<FText>& OutReasons) const
+{
+	TSharedPtr<FPropertyNode> PropertyNode = Implementation->GetPropertyNode();
+	if( PropertyNode.IsValid() )
+	{
+		return PropertyNode->IsHidden(Value, &OutReasons);
+	}
+	return false;
+}
+
+bool FPropertyHandleBase::IsDisabled(const FString& Value) const
+{
+	TSharedPtr<FPropertyNode> PropertyNode = Implementation->GetPropertyNode();
+	if( PropertyNode.IsValid() )
+	{
+		return PropertyNode->IsDisabled(Value);
+	}
+	return false;
+}
+
+bool FPropertyHandleBase::IsDisabled(const FString& Value, TArray<FText>& OutReasons) const
+{
+	TSharedPtr<FPropertyNode> PropertyNode = Implementation->GetPropertyNode();
+	if( PropertyNode.IsValid() )
+	{
+		return PropertyNode->IsDisabled(Value, &OutReasons);
 	}
 	return false;
 }
@@ -2564,7 +2717,7 @@ FPropertyAccess::Result FPropertyHandleInt::SetValue(const int8& NewValue, EProp
 	// Clamp the value from any meta data ranges stored on the property value
 	int8 FinalValue = ClampIntegerValueFromMetaData<int8>( NewValue, *Implementation->GetPropertyNode() );
 
-	const FString ValueStr = LexicalConversion::ToString(FinalValue);
+	const FString ValueStr = Lex::ToString(FinalValue);
 	Res = Implementation->ImportText(ValueStr, Flags);
 
 	return Res;
@@ -2577,7 +2730,7 @@ FPropertyAccess::Result FPropertyHandleInt::SetValue(const int16& NewValue, EPro
 	// Clamp the value from any meta data ranges stored on the property value
 	int16 FinalValue = ClampIntegerValueFromMetaData<int16>(NewValue, *Implementation->GetPropertyNode());
 
-	const FString ValueStr = LexicalConversion::ToString(FinalValue);
+	const FString ValueStr = Lex::ToString(FinalValue);
 	Res = Implementation->ImportText(ValueStr, Flags);
 
 	return Res;
@@ -2590,7 +2743,7 @@ FPropertyAccess::Result FPropertyHandleInt::SetValue( const int32& NewValue, EPr
 	// Clamp the value from any meta data ranges stored on the property value
 	int32 FinalValue = ClampIntegerValueFromMetaData<int32>( NewValue, *Implementation->GetPropertyNode() );
 
-	const FString ValueStr = LexicalConversion::ToString(FinalValue);
+	const FString ValueStr = Lex::ToString(FinalValue);
 	Res = Implementation->ImportText( ValueStr, Flags );
 
 	return Res;
@@ -2603,7 +2756,7 @@ FPropertyAccess::Result FPropertyHandleInt::SetValue(const int64& NewValue, EPro
 	// Clamp the value from any meta data ranges stored on the property value
 	int64 FinalValue = ClampIntegerValueFromMetaData<int64>(NewValue, *Implementation->GetPropertyNode());
 
-	const FString ValueStr = LexicalConversion::ToString(FinalValue);
+	const FString ValueStr = Lex::ToString(FinalValue);
 	Res = Implementation->ImportText(ValueStr, Flags);
 	return Res;
 }
@@ -2614,7 +2767,7 @@ FPropertyAccess::Result FPropertyHandleInt::SetValue(const uint16& NewValue, EPr
 	// Clamp the value from any meta data ranges stored on the property value
 	uint16 FinalValue = ClampIntegerValueFromMetaData<uint16>(NewValue, *Implementation->GetPropertyNode());
 
-	const FString ValueStr = LexicalConversion::ToString(FinalValue);
+	const FString ValueStr = Lex::ToString(FinalValue);
 	Res = Implementation->ImportText(ValueStr, Flags);
 
 	return Res;
@@ -2627,7 +2780,7 @@ FPropertyAccess::Result FPropertyHandleInt::SetValue(const uint32& NewValue, EPr
 	// Clamp the value from any meta data ranges stored on the property value
 	uint32 FinalValue = ClampIntegerValueFromMetaData<uint32>(NewValue, *Implementation->GetPropertyNode());
 
-	const FString ValueStr = LexicalConversion::ToString(FinalValue);
+	const FString ValueStr = Lex::ToString(FinalValue);
 	Res = Implementation->ImportText(ValueStr, Flags);
 
 	return Res;
@@ -2639,7 +2792,7 @@ FPropertyAccess::Result FPropertyHandleInt::SetValue(const uint64& NewValue, EPr
 	// Clamp the value from any meta data ranges stored on the property value
 	uint64 FinalValue = ClampIntegerValueFromMetaData<uint64>(NewValue, *Implementation->GetPropertyNode());
 
-	const FString ValueStr = LexicalConversion::ToString(FinalValue);
+	const FString ValueStr = Lex::ToString(FinalValue);
 	Res = Implementation->ImportText(ValueStr, Flags);
 	return Res;
 }

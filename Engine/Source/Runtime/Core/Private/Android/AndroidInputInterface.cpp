@@ -324,7 +324,7 @@ static uint32 CharMap[] =
     0,
     0,
     L'\n',
-    0,
+    L'\b',
     L'`',
     L'-',
     L'=',
@@ -551,7 +551,7 @@ static uint32 CharMapShift[] =
 	0,
 	0,
 	L'\n',
-	0,
+	L'\b',
 	L'~',
 	L'_',
 	L'+',
@@ -772,6 +772,10 @@ void FAndroidInputInterface::SendControllerEvents()
 						CurrentDevice.bMapL1R1ToTriggers = true;
 						CurrentDevice.bRightStickZRZ = false;
 						CurrentDevice.bRightStickRXRY = true;
+					}
+					else if (CurrentDevice.DeviceInfo.Name.StartsWith(TEXT("Mad Catz C.T.R.L.R")))
+					{
+						CurrentDevice.bSupportsHat = true;
 					}
 
 					FCoreDelegates::OnControllerConnectionChange.Broadcast(true, -1, DeviceIndex);

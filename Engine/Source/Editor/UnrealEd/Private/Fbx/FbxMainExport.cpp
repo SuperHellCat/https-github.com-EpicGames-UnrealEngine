@@ -973,7 +973,32 @@ void FFbxExporter::ExportStaticMesh( UStaticMesh* StaticMesh, const TArray<FStat
 	StaticMesh->GetName(MeshName);
 	FbxNode* MeshNode = FbxNode::Create(Scene, TCHAR_TO_UTF8(*MeshName));
 	Scene->GetRootNode()->AddChild(MeshNode);
-	ExportStaticMeshToFbx(StaticMesh, 0, *MeshName, MeshNode, -1, NULL, MaterialOrder);
+
+	if (StaticMesh->GetNumLODs() > 1)
+	{
+		FString LodGroup_MeshName = MeshName + ("_LodGroup");
+		FbxLODGroup *FbxLodGroupAttribute = FbxLODGroup::Create(Scene, TCHAR_TO_UTF8(*LodGroup_MeshName));
+		MeshNode->AddNodeAttribute(FbxLodGroupAttribute);
+		FbxLodGroupAttribute->ThresholdsUsedAsPercentage = true;
+		//Export an Fbx Mesh Node for every LOD and child them to the fbx node (LOD Group)
+		for (int CurrentLodIndex = 0; CurrentLodIndex < StaticMesh->GetNumLODs(); ++CurrentLodIndex)
+		{
+			FString FbxLODNodeName = MeshName + TEXT("_LOD") + FString::FromInt(CurrentLodIndex);
+			FbxNode* FbxActorLOD = FbxNode::Create(Scene, TCHAR_TO_UTF8(*FbxLODNodeName));
+			MeshNode->AddChild(FbxActorLOD);
+			if (CurrentLodIndex + 1 < StaticMesh->GetNumLODs())
+			{
+				//Convert the screen size to a threshold, it is just to be sure that we set some threshold, there is no way to convert this precisely
+				double LodScreenSize = (double)(10.0f / StaticMesh->RenderData->ScreenSize[CurrentLodIndex]);
+				FbxLodGroupAttribute->AddThreshold(LodScreenSize);
+			}
+			ExportStaticMeshToFbx(StaticMesh, CurrentLodIndex, *MeshName, FbxActorLOD, -1, nullptr, MaterialOrder);
+		}
+	}
+	else
+	{
+		ExportStaticMeshToFbx(StaticMesh, 0, *MeshName, MeshNode, -1, NULL, MaterialOrder);
+	}
 }
 
 void FFbxExporter::ExportStaticMeshLightMap( UStaticMesh* StaticMesh, int32 LODIndex, int32 UVChannel )
@@ -2698,7 +2723,7 @@ public:
 private:
 	uint32 GetConvexVerticeNumber(const FKConvexElem &ConvexElem)
 	{
-		return ConvexElem.ConvexMesh != nullptr ? ConvexElem.ConvexMesh->getNbVertices() : 0;
+		return ConvexElem.GetConvexMesh() != nullptr ? ConvexElem.GetConvexMesh()->getNbVertices() : 0;
 	}
 
 	uint32 GetBoxVerticeNumber() { return 24; }
@@ -2709,8 +2734,7 @@ private:
 
 	void AddConvexVertex(const FKConvexElem &ConvexElem)
 	{
-		const FTransform &ConvexTransform = ConvexElem.GetTransform();
-		const physx::PxConvexMesh* ConvexMesh = ConvexElem.ConvexMesh;
+		const physx::PxConvexMesh* ConvexMesh = ConvexElem.GetConvexMesh();
 		if (ConvexMesh == nullptr)
 		{
 			return;
@@ -2719,7 +2743,6 @@ private:
 		for (uint32 PosIndex = 0; PosIndex < ConvexMesh->getNbVertices(); ++PosIndex)
 		{
 			FVector Position = P2UVector(VertexArray[PosIndex]);
-			Position = ConvexTransform.TransformPosition(Position);
 			ControlPoints[CurrentVertexOffset + PosIndex] = FbxVector4(Position.X, -Position.Y, Position.Z);
 		}
 		CurrentVertexOffset += ConvexMesh->getNbVertices();
@@ -2727,8 +2750,7 @@ private:
 
 	void AddConvexNormals(const FKConvexElem &ConvexElem)
 	{
-		const FTransform &ConvexTransform = ConvexElem.GetTransform();
-		const physx::PxConvexMesh* ConvexMesh = ConvexElem.ConvexMesh;
+		const physx::PxConvexMesh* ConvexMesh = ConvexElem.GetConvexMesh();
 		if (ConvexMesh == nullptr)
 		{
 			return;
@@ -2744,7 +2766,6 @@ private:
 			}
 			const PxVec3 PPlaneNormal(PolyData.mPlane[0], PolyData.mPlane[1], PolyData.mPlane[2]);
 			FVector Normal = P2UVector(PPlaneNormal.getNormalized());
-			Normal = ConvexTransform.TransformVector(Normal);
 			FbxVector4 FbxNormal = FbxVector4(Normal.X, -Normal.Y, Normal.Z);
 			// add vertices 
 			for (PxU32 j = 0; j < PolyData.mNbVerts; ++j)
@@ -2756,7 +2777,7 @@ private:
 
 	void AddConvexPolygon(const FKConvexElem &ConvexElem)
 	{
-		const physx::PxConvexMesh* ConvexMesh = ConvexElem.ConvexMesh;
+		const physx::PxConvexMesh* ConvexMesh = ConvexElem.GetConvexMesh();
 		if (ConvexMesh == nullptr)
 		{
 			return;
@@ -3449,7 +3470,7 @@ FbxNode* FFbxExporter::ExportStaticMeshToFbx(const UStaticMesh* StaticMesh, int3
 			AccountedTriangles += TriangleCount;
 		}
 
-#if TODO_FBX
+#ifdef TODO_FBX
 		// Throw a warning if this is a lightmap export and the exported poly count does not match the raw triangle data count
 		if (LightmapUVChannel != -1 && AccountedTriangles != RenderMesh.RawTriangles.GetElementCount())
 		{
@@ -3759,7 +3780,7 @@ void FFbxExporter::ExportSplineMeshToFbx(const USplineMeshComponent* SplineMeshC
 		}
 	}
 
-#if TODO_FBX
+#ifdef TODO_FBX
 	// This is broken. We are exporting the render mesh but providing smoothing
 	// information from the source mesh. The render triangles are not in the
 	// same order. Therefore we should export the raw mesh or not export

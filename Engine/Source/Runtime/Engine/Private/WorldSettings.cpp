@@ -62,6 +62,7 @@ AWorldSettings::AWorldSettings(const FObjectInitializer& ObjectInitializer)
 	KillZDamageType = ConstructorStatics.DmgType_Environmental_Object.Object;
 
 	WorldToMeters = 100.f;
+	MonoCullingDistance = 750.f;
 
 	DefaultPhysicsVolumeClass = ADefaultPhysicsVolume::StaticClass();
 	GameNetworkManagerClass = AGameNetworkManager::StaticClass();
@@ -176,12 +177,8 @@ void AWorldSettings::NotifyBeginPlay()
 	{
 		for (FActorIterator It(World); It; ++It)
 		{
-			// Actors that have traveled seamlessly from other levels already had BeginPlay called in that level
-			if (!It->IsPendingKill() && !It->HasActorBegunPlay())
-			{
-				SCOPE_CYCLE_COUNTER(STAT_ActorBeginPlay);
-				It->BeginPlay();
-			}
+			SCOPE_CYCLE_COUNTER(STAT_ActorBeginPlay);
+			It->DispatchBeginPlay();
 		}
 		World->bBegunPlay = true;
 	}
