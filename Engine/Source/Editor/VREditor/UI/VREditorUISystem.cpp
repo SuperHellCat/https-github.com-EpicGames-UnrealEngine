@@ -14,11 +14,12 @@
 #include "Widgets/SWidget.h"
 #include "Widgets/SWindow.h"
 #include "Widgets/Input/SButton.h"
-#include "Widgets/SOverlay.h"
 #include "Widgets/Layout/SUniformGridPanel.h"
 #include "Widgets/Layout/SBorder.h"
+#include "Widgets/Layout/SBox.h"
 
 #include "Framework/MultiBox/MultiBox.h"
+#include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Docking/TabManager.h"
 #include "Layout/WidgetPath.h"
@@ -2365,7 +2366,7 @@ TSharedRef<SWidget> UVREditorUISystem::BuildNumPadWidget()
 
 	MenuBuilder.AddMenuEntry(
 		LOCTEXT("NumThree", "3"),
-		LOCTEXT("", ""),
+		FText::GetEmpty(),
 		FSlateIcon(),
 		FUIAction
 		(
@@ -2374,7 +2375,7 @@ TSharedRef<SWidget> UVREditorUISystem::BuildNumPadWidget()
 		);
 	MenuBuilder.AddMenuEntry(
 		LOCTEXT("NumFour", "4"),
-		LOCTEXT("", ""),
+		FText::GetEmpty(),
 		FSlateIcon(),
 		FUIAction
 		(
@@ -2383,7 +2384,7 @@ TSharedRef<SWidget> UVREditorUISystem::BuildNumPadWidget()
 		);
 	MenuBuilder.AddMenuEntry(
 		LOCTEXT("NumFive", "5"),
-		LOCTEXT("", ""),
+		FText::GetEmpty(),
 		FSlateIcon(),
 		FUIAction
 		(
@@ -2392,7 +2393,7 @@ TSharedRef<SWidget> UVREditorUISystem::BuildNumPadWidget()
 		);
 	MenuBuilder.AddMenuEntry(
 		LOCTEXT("NumSix", "6"),
-		LOCTEXT("", ""),
+		FText::GetEmpty(),
 		FSlateIcon(),
 		FUIAction
 		(
@@ -2401,7 +2402,7 @@ TSharedRef<SWidget> UVREditorUISystem::BuildNumPadWidget()
 		);
 	MenuBuilder.AddMenuEntry(
 		LOCTEXT("NumSeven", "7"),
-		LOCTEXT("", ""),
+		FText::GetEmpty(),
 		FSlateIcon(),
 		FUIAction
 		(
@@ -2410,7 +2411,7 @@ TSharedRef<SWidget> UVREditorUISystem::BuildNumPadWidget()
 		);
 	MenuBuilder.AddMenuEntry(
 		LOCTEXT("NumEight", "8"),
-		LOCTEXT("", ""),
+		FText::GetEmpty(),
 		FSlateIcon(),
 		FUIAction
 		(
@@ -2419,7 +2420,7 @@ TSharedRef<SWidget> UVREditorUISystem::BuildNumPadWidget()
 		);
 	MenuBuilder.AddMenuEntry(
 		LOCTEXT("NumNine", "9"),
-		LOCTEXT("", ""),
+		FText::GetEmpty(),
 		FSlateIcon(),
 		FUIAction
 		(
@@ -2428,7 +2429,7 @@ TSharedRef<SWidget> UVREditorUISystem::BuildNumPadWidget()
 		);
 	MenuBuilder.AddMenuEntry(
 		LOCTEXT( "Hyphen", "-" ),
-		LOCTEXT( "", "" ),
+		FText::GetEmpty(),
 		FSlateIcon(),
 		FUIAction
 		(
@@ -2437,7 +2438,7 @@ TSharedRef<SWidget> UVREditorUISystem::BuildNumPadWidget()
 	);
 	MenuBuilder.AddMenuEntry(
 		LOCTEXT( "Decimal", "." ),
-		LOCTEXT( "", "" ),
+		FText::GetEmpty(),
 		FSlateIcon(),
 		FUIAction
 		(
@@ -2446,7 +2447,7 @@ TSharedRef<SWidget> UVREditorUISystem::BuildNumPadWidget()
 	);
 	MenuBuilder.AddMenuEntry(
 		LOCTEXT( "NumZero", "0" ),
-		LOCTEXT( "", "" ),
+		FText::GetEmpty(),
 		FSlateIcon(),
 		FUIAction
 		(
@@ -2455,7 +2456,7 @@ TSharedRef<SWidget> UVREditorUISystem::BuildNumPadWidget()
 	);
 	MenuBuilder.AddMenuEntry(
 		LOCTEXT( "NumOne", "1" ),
-		LOCTEXT( "", "" ),
+		FText::GetEmpty(),
 		FSlateIcon(),
 		FUIAction
 		(
@@ -2464,7 +2465,7 @@ TSharedRef<SWidget> UVREditorUISystem::BuildNumPadWidget()
 	);
 	MenuBuilder.AddMenuEntry(
 		LOCTEXT( "NumTwo", "2" ),
-		LOCTEXT( "", "" ),
+		FText::GetEmpty(),
 		FSlateIcon(),
 		FUIAction
 		(
