@@ -2818,10 +2818,6 @@ void FAudioDevice::StartSources(TArray<FWaveInstance*>& WaveInstances, int32 Fir
 				Source = FreeSources.Pop();
 				check(Source);
 
-				// Clear pause state
-				Source->bIsManuallyPaused = false;
-				Source->bIsPausedByGame = false;
-
 				// Prepare for initialization... 
 				bool bSuccess = false;
 				if (Source->PrepareForInitialization(WaveInstance))
@@ -2838,6 +2834,10 @@ void FAudioDevice::StartSources(TArray<FWaveInstance*>& WaveInstances, int32 Fir
 						// If we succeeded then play and update the source
 						if (bSuccess)
 						{
+							// Clear pause state
+							Source->bIsManuallyPaused = false;
+							Source->bIsPausedByGame = false;
+
 							// Set the pause before updating it
 							Source->SetPauseManually(Source->WaveInstance->bIsPaused);
 
