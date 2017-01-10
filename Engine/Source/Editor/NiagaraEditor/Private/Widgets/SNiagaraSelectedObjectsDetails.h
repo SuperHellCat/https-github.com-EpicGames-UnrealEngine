@@ -2,6 +2,10 @@
 
 #pragma once
 
+#include "SCompoundWidget.h"
+#include "Delegate.h"
+#include "DeclarativeSyntaxSupport.h"
+
 class FNiagaraObjectSelection;
 class IDetailsView;
 
