@@ -4962,7 +4962,6 @@ void UParticleSystemComponent::InitParticles()
 		int32 NumInstances = EmitterInstances.Num();
 		int32 NumEmitters = Template->Emitters.Num();
 		const bool bIsFirstCreate = NumInstances == 0;
-		check(bIsFirstCreate || NumInstances == NumEmitters);
 		EmitterInstances.SetNumZeroed(NumEmitters);
 
 		bWasCompleted = bIsFirstCreate ? false : bWasCompleted;
@@ -4984,6 +4983,7 @@ void UParticleSystemComponent::InitParticles()
 				if (Instance)
 				{
 					Instance->SetHaltSpawning(false);
+					Instance->SetHaltSpawningExternal(false);
 				}
 				else
 				{
@@ -5331,6 +5331,7 @@ void UParticleSystemComponent::ActivateSystem(bool bFlagAsJustAttached)
 				{
 					EmitterInstances[i]->Rewind();
 					EmitterInstances[i]->SetHaltSpawning(false);
+					EmitterInstances[i]->SetHaltSpawningExternal(false);
 				}
 			}
 		}
@@ -6194,7 +6195,7 @@ void UParticleSystemComponent::SetEmitterEnable(FName EmitterName, bool bNewEnab
 		{
 			if (EmitterInst->SpriteTemplate->EmitterName == EmitterName)
 			{
-				EmitterInst->SetHaltSpawning(!bNewEnableState);
+				EmitterInst->SetHaltSpawningExternal(!bNewEnableState);
 			}
 		}
 	}
