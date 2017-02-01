@@ -4,7 +4,7 @@ namespace UnrealBuildTool.Rules
 {
 	public class AutomationController : ModuleRules
 	{
-		public AutomationController(TargetInfo Target)
+		public AutomationController(ReadOnlyTargetRules Target) : base(Target)
 		{
 			PublicDependencyModuleNames.AddRange(
 				new string[]
@@ -22,7 +22,8 @@ namespace UnrealBuildTool.Rules
                     "MessageLog",
                     "Json",
                     "JsonUtilities",
-					"ScreenShotComparisonTools"
+					"ScreenShotComparisonTools",
+					"HTTP"
                 }
 			);
 
