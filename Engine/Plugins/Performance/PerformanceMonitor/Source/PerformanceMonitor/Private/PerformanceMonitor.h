@@ -31,9 +31,14 @@ private:
 	FDelegateHandle TickHandler;
 
 	bool bRecording;
+	float TimeOfTestStart;
+	float TestTimeOut;
 	float TimeOfLastRecord;
 	float TimeBetweenRecords;
+	FString MapToTest;
 	bool bHasWarnedAboutTime;
+	bool bExitOnCompletion;
+	bool bRequiresCutsceneStart;
 
 protected:
 public:
@@ -78,9 +83,7 @@ public:
 
 
 	bool IsRecordingPerfTimers() { return bRecording; }
-#if STATS
 	void StartRecordingPerfTimers(FString FileName, TArray<FString> StatsToRecord);
-#endif
 	void SetRecordInterval(float NewInterval);
 
 	void RecordFrame();

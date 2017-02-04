@@ -22,6 +22,8 @@
 #include "Future.h"
 #include "Async.h"
 #include "Misc/Guid.h"
+#include "Math/Vector.h"
+#include "Math/Color.h"
 
 /** Flags for specifying automation test requirements/behavior */
 namespace EAutomationTestFlags
@@ -1060,6 +1062,22 @@ public:
 		if ( !FMath::IsNearlyEqual(Actual, Expected, Tolerance) )
 		{
 			AddError(FString::Printf(TEXT("Expected '%s' to be %f, but it was %f within tolerance %f."), *What, Expected, Actual, Tolerance), 1);
+		}
+	}
+
+	void TestEqual(const FString& What, const FVector Actual, const FVector Expected, float Tolerance = 1.e-4)
+	{
+		if ( !Expected.Equals(Actual, Tolerance) )
+		{
+			AddError(FString::Printf(TEXT("Expected '%s' to be %s, but it was %s within tolerance %f."), *What, *Expected.ToString(), *Actual.ToString(), Tolerance), 1);
+		}
+	}
+
+	void TestEqual(const FString& What, const FColor Actual, const FColor Expected)
+	{
+		if ( Expected != Actual )
+		{
+			AddError(FString::Printf(TEXT("Expected '%s' to be %s, but it was %s."), *What, *Expected.ToString(), *Actual.ToString()), 1);
 		}
 	}
 

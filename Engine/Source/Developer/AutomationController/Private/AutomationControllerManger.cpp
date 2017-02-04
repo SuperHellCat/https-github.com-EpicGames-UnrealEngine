@@ -221,9 +221,12 @@ void FAutomationControllerManager::ProcessComparisonQueue()
 				FString UnapprovedFolder = ScreenshotManager->GetLocalUnapprovedFolder();
 				FString ComparisonFolder = ScreenshotManager->GetLocalComparisonFolder();
 
-				Report->AddArtifact(ClusterIndex, CurrentTestPass, FAutomationArtifact(TEXT("Approved"), ApprovedFolder / Result.ApprovedFile));
-				Report->AddArtifact(ClusterIndex, CurrentTestPass, FAutomationArtifact(TEXT("Incoming"), UnapprovedFolder / Result.IncomingFile));
-				Report->AddArtifact(ClusterIndex, CurrentTestPass, FAutomationArtifact(TEXT("Difference"), ComparisonFolder / Result.ComparisonFile));
+				TArray<FString> Files;
+				Files.Add(ApprovedFolder / Result.ApprovedFile);
+				Files.Add(UnapprovedFolder / Result.IncomingFile);
+				Files.Add(ComparisonFolder / Result.ComparisonFile);
+
+				Report->AddArtifact(ClusterIndex, CurrentTestPass, FAutomationArtifact(Entry->Name, EAutomationArtifactType::Comparison, Files));
 			}
 		}
 	}
@@ -324,9 +327,9 @@ void FAutomationControllerManager::GenerateJsonTestPassSummary(FDateTime Timesta
 	TSharedPtr<FJsonObject> ReportJson = FJsonObjectConverter::UStructToJsonObject(SerializedPassResults);
 	if (ReportJson.IsValid())
 	{
-		FString ReportOutputFolder = ReportOutputPathOverride.IsEmpty() ? FPaths::AutomationLogDir() : ReportOutputPathOverride;
+		FString ReportOutputPath = GetReportPath(Timestamp);
 
-		FString ReportFileName = FString::Printf(TEXT("%s/AutomationReport-%d-%s.json"), *ReportOutputFolder, FEngineVersion::Current().GetChangelist(), *Timestamp.ToString());
+		FString ReportFileName = FString::Printf(TEXT("%s/index.json"), *ReportOutputPath);
 		FArchive* ReportFileWriter = IFileManager::Get().CreateFileWriter(*ReportFileName);
 		if (ReportFileWriter != nullptr)
 		{
@@ -349,7 +352,8 @@ void FAutomationControllerManager::GenerateHtmlTestPassSummary(FDateTime Timesta
 		return;
 	}
 
-	FString ReportOutputFolder = ReportOutputPathOverride.IsEmpty() ? FPaths::AutomationLogDir() : ReportOutputPathOverride;
+	FString ReportOutputPath = GetReportPath(Timestamp);
+	FScreenshotExportResults ExportResults = ScreenshotManager->ExportComparisonResultsAsync(ReportOutputPath).Get();
 
 	FAutomatedTestPassResults SerializedPassResults = OurPassResults;
 	SerializedPassResults.TestInformation.StableSort([] (const FAutomatedTestResult& A, const FAutomatedTestResult& B) {
@@ -380,28 +384,35 @@ void FAutomationControllerManager::GenerateHtmlTestPassSummary(FDateTime Timesta
 		return A.TestDisplayName < B.TestDisplayName;
 	});
 
-	FString MasterTemplate, ResultTemplate, LogTemplate, ArtifactTemplate;
+	FString MasterTemplate, ResultTemplate, LogTemplate, ArtifactCompareTemplate, ArtifactImageTemplate;
 	const bool bLoadedMaster = FFileHelper::LoadFileToString(MasterTemplate, *( FPaths::EngineContentDir() / TEXT("Automation/Report-Master-Template.html") ));
 	const bool bLoadedResult = FFileHelper::LoadFileToString(ResultTemplate, *( FPaths::EngineContentDir() / TEXT("Automation/Report-Result-Template.html") ));
 	const bool bLoadedLog = FFileHelper::LoadFileToString(LogTemplate, *( FPaths::EngineContentDir() / TEXT("Automation/Report-Log-Template.html") ));
-	const bool bLoadedArtifact = FFileHelper::LoadFileToString(ArtifactTemplate, *( FPaths::EngineContentDir() / TEXT("Automation/Report-Artifact-Template.html") ));
-	check(bLoadedMaster && bLoadedResult && bLoadedLog && bLoadedArtifact);
+	const bool bLoadedCompareArtifact = FFileHelper::LoadFileToString(ArtifactCompareTemplate, *( FPaths::EngineContentDir() / TEXT("Automation/Report-Artifact-Compare-Template.html") ));
+	const bool bLoadedImageArtifact = FFileHelper::LoadFileToString(ArtifactImageTemplate, *( FPaths::EngineContentDir() / TEXT("Automation/Report-Artifact-Image-Template.html") ));
+	check(bLoadedMaster && bLoadedResult && bLoadedLog && bLoadedCompareArtifact && bLoadedImageArtifact);
 
-	FString SuccessColor = TEXT("#3dd94a");
-	FString WarningColor = TEXT("#f9bb00");
-	FString ErrorColor = TEXT("#ff2154");
-
-	FString TitleColor = SuccessColor;
+	FString ReportState = TEXT("success");
+	FString ReportIcon = TEXT("heartbeat");
 	if ( SerializedPassResults.TestInformation.Num() > 0 )
 	{
 		const FAutomatedTestResult& FirstTest = SerializedPassResults.TestInformation[0];
-		TitleColor = FirstTest.Errors.Num() > 0 ? ErrorColor : FirstTest.Warnings.Num() > 0 ? WarningColor : SuccessColor;
+		if ( FirstTest.Errors.Num() > 0 )
+		{
+			ReportState = TEXT("error");
+			ReportIcon = TEXT("bomb");
+		}
+		else if ( FirstTest.Warnings.Num() > 0 )
+		{
+			ReportState = TEXT("warning");
+			ReportIcon = TEXT("exclamation-triangle");
+		}
 	}
 
 	FString HtmlResults;
 	for ( const FAutomatedTestResult& Test : SerializedPassResults.TestInformation )
 	{
-		FString TestColor = Test.Errors.Num() > 0 ? ErrorColor : Test.Warnings.Num() > 0 ? WarningColor : SuccessColor;
+		FString TestState = Test.Errors.Num() > 0 ? TEXT("error") : Test.Warnings.Num() > 0 ? TEXT("warning") : TEXT("success");
 
 		FString Logs = TEXT("");
 
@@ -426,22 +437,35 @@ void FAutomationControllerManager::GenerateHtmlTestPassSummary(FDateTime Timesta
 			Logs += FString::Format(*LogTemplate, Args);
 		}
 
-		FString AritfactDirectory = FString::Printf(TEXT("ReportArtifact-%d"), FEngineVersion::Current().GetChangelist());
 		for ( const FAutomationArtifact& Artifact : Test.Artifacts )
 		{
-			FString ArtifactFile = AritfactDirectory / FGuid::NewGuid().ToString(EGuidFormats::Digits) + FPaths::GetExtension(Artifact.FilePath, true);
-			FString ArtifactDestination = ReportOutputFolder / ArtifactFile;
-			IFileManager::Get().Copy(*ArtifactDestination, *Artifact.FilePath, true, true);
+			if ( Artifact.Type == EAutomationArtifactType::Comparison )
+			{
+				TMap<FString, FStringFormatArg> Args;
+				Args.Add(TEXT("Name"), FPlatformHttp::HtmlEncode(Artifact.Name));
+				Args.Add(TEXT("Approved"), CopyArtifact(ReportOutputPath, Artifact.FilePaths[0]));
+				Args.Add(TEXT("Unapproved"), CopyArtifact(ReportOutputPath, Artifact.FilePaths[1]));
+				Args.Add(TEXT("Difference"), CopyArtifact(ReportOutputPath, Artifact.FilePaths[2]));
 
-			TMap<FString, FStringFormatArg> Args;
-			Args.Add(TEXT("Name"), FPlatformHttp::HtmlEncode(Artifact.Name));
-			Args.Add(TEXT("File"), ArtifactFile);
-			Logs += FString::Format(*ArtifactTemplate, Args);
+				Logs += FString::Format(*ArtifactCompareTemplate, Args);
+			}
+			else if ( Artifact.Type == EAutomationArtifactType::Image )
+			{
+				TMap<FString, FStringFormatArg> Args;
+				Args.Add(TEXT("Name"), FPlatformHttp::HtmlEncode(Artifact.Name));
+				Args.Add(TEXT("File"), CopyArtifact(ReportOutputPath, Artifact.FilePaths[0]));
+
+				Logs += FString::Format(*ArtifactCompareTemplate, Args);
+			}
+			else
+			{
+				check(false);
+			}
 		}
 
 		{
 			TMap<FString, FStringFormatArg> Args;
-			Args.Add(TEXT("TestColor"), TestColor);
+			Args.Add(TEXT("TestState"), TestState);
 			Args.Add(TEXT("TestName"), Test.TestDisplayName);
 			Args.Add(TEXT("TestPath"), Test.FullTestPath);
 			Args.Add(TEXT("Logs"), Logs);
@@ -453,17 +477,35 @@ void FAutomationControllerManager::GenerateHtmlTestPassSummary(FDateTime Timesta
 	{
 		TMap<FString, FStringFormatArg> Args;
 		Args.Add(TEXT("Title"), TEXT("Automation Test Results"));
-		Args.Add(TEXT("TitleColor"), TitleColor);
+		Args.Add(TEXT("ReportState"), ReportState);
+		Args.Add(TEXT("ReportIcon"), ReportIcon);
+		Args.Add(TEXT("ComparisonExportDirectory"), ExportResults.ExportPath);
 		Args.Add(TEXT("Results"), HtmlResults);
 
 		FString Html = FString::Format(*MasterTemplate, Args);
 
-		FString ReportFileName = FString::Printf(TEXT("%s/AutomationReport-%d-%s.html"), *ReportOutputFolder, FEngineVersion::Current().GetChangelist(), *Timestamp.ToString());
-		if ( !FFileHelper::SaveStringToFile(Html, *ReportFileName) )
+		FString ReportFileName = FString::Printf(TEXT("%s/index.html"), *ReportOutputPath);
+		if ( !FFileHelper::SaveStringToFile(Html, *ReportFileName, FFileHelper::EEncodingOptions::ForceUTF8) )
 		{
 			GLog->Logf(ELogVerbosity::Error, TEXT("Test Report Html is invalid - report not generated."));
 		}
 	}
+}
+
+FString FAutomationControllerManager::CopyArtifact(const FString& DestFolder, const FString& SourceFile) const
+{
+	FString AritfactDirectory = FString::Printf(TEXT("ReportArtifacts-%d"), FEngineVersion::Current().GetChangelist());
+
+	FString ArtifactFile = AritfactDirectory / FGuid::NewGuid().ToString(EGuidFormats::Digits) + FPaths::GetExtension(SourceFile, true);
+	FString ArtifactDestination = DestFolder / ArtifactFile;
+	IFileManager::Get().Copy(*ArtifactDestination, *SourceFile, true, true);
+
+	return ArtifactFile;
+}
+
+FString FAutomationControllerManager::GetReportPath(FDateTime Timestamp) const
+{
+	return ReportOutputPathOverride.IsEmpty() ? FString::Printf(TEXT("%s/Report-%d-%s"), *FPaths::AutomationLogDir(), FEngineVersion::Current().GetChangelist(), *Timestamp.ToString()) : ReportOutputPathOverride;
 }
 
 void FAutomationControllerManager::ExecuteNextTask( int32 ClusterIndex, OUT bool& bAllTestsCompleted )
@@ -679,11 +721,17 @@ void FAutomationControllerManager::ProcessResults()
 		}
 	}
 
-	// Write our the report of our automation pass to JSON. Then clean our array for the next pass.
-	FDateTime Timestamp = FDateTime::Now();
-	GenerateJsonTestPassSummary(Timestamp);
-	GenerateHtmlTestPassSummary(Timestamp);
+	if ( !ReportOutputPathOverride.IsEmpty() )
+	{
+		FDateTime Timestamp = FDateTime::Now();
 
+		// Generate Html
+		GenerateHtmlTestPassSummary(Timestamp);
+		// Generate Json
+		GenerateJsonTestPassSummary(Timestamp);
+	}
+
+	// Then clean our array for the next pass.
 	OurPassResults.ClearAllEntries();
 
 	SetControllerStatus(EAutomationControllerModuleState::Ready);
@@ -895,6 +943,7 @@ void FAutomationControllerManager::HandleReceivedScreenShot(const FAutomationWor
 
 	TSharedRef<FComparisonEntry> Comparison = MakeShareable(new FComparisonEntry());
 	Comparison->Sender = Context->GetSender();
+	Comparison->Name = Message.Metadata.Name;
 	Comparison->PendingComparison = ScreenshotManager->CompareScreensotAsync(Message.ScreenShotName);
 
 	ComparisonQueue.Enqueue(Comparison);

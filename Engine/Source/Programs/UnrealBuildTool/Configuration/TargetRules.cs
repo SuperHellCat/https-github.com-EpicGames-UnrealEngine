@@ -918,6 +918,11 @@ namespace UnrealBuildTool
 		public AndroidTargetRules AndroidPlatform = new AndroidTargetRules();
 
 		/// <summary>
+		/// Mac-specific target settings
+		/// </summary>
+		public MacTargetRules MacPlatform = new MacTargetRules();
+
+		/// <summary>
 		/// Windows-specific target settings
 		/// </summary>
 		public WindowsTargetRules WindowsPlatform = new WindowsTargetRules();
@@ -951,6 +956,9 @@ namespace UnrealBuildTool
 			{
 				ConfigCache.ReadSettings(DirectoryReference.FromFile(ProjectFile), Platform, ConfigurableObject);
 			}
+
+			// Read settings from the XML config files
+			XmlConfig.ApplyTo(this);
 
 			// Allow the build platform to set defaults for this target
 			if(Platform != UnrealTargetPlatform.Unknown)
@@ -1318,6 +1326,7 @@ namespace UnrealBuildTool
 		{
 			this.Inner = Inner;
 			AndroidPlatform = new ReadOnlyAndroidTargetRules(Inner.AndroidPlatform);
+			MacPlatform = new ReadOnlyMacTargetRules(Inner.MacPlatform);
 			WindowsPlatform = new ReadOnlyWindowsTargetRules(Inner.WindowsPlatform);
 		}
 
@@ -1889,6 +1898,12 @@ namespace UnrealBuildTool
 		}
 
 		public ReadOnlyAndroidTargetRules AndroidPlatform
+		{
+			get;
+			private set;
+		}
+
+		public ReadOnlyMacTargetRules MacPlatform
 		{
 			get;
 			private set;

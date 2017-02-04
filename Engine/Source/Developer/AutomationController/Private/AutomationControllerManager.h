@@ -313,6 +313,10 @@ protected:
 	 */
 	void CheckChildResult( TSharedPtr< IAutomationReport > InReport );
 
+	FString CopyArtifact(const FString& DestFolder, const FString& SourceFile) const;
+
+	FString GetReportPath(FDateTime Timestamp) const;
+
 	/**
 	 * Execute the next task thats available.
 	 *
@@ -484,6 +488,7 @@ private:
 	struct FComparisonEntry
 	{
 		FMessageAddress Sender;
+		FString Name;
 		TFuture<FImageComparisonResult> PendingComparison;
 	};
 

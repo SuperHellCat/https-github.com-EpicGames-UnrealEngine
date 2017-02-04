@@ -55,6 +55,7 @@
 	#include "UObject/UObjectHash.h"
 	#include "UObject/Package.h"
 	#include "UObject/Linker.h"
+	#include "UObject/LinkerLoad.h"
 #endif
 
 #if WITH_EDITOR
@@ -90,7 +91,9 @@
 	#include "EngineStats.h"
 	#include "EngineGlobals.h"
 	#include "AudioThread.h"
+#if WITH_ENGINE && !UE_BUILD_SHIPPING
 	#include "Interfaces/IAutomationControllerModule.h"
+#endif // WITH_ENGINE && !UE_BUILD_SHIPPING
 	#include "Database.h"
 	#include "DerivedDataCacheInterface.h"
 	#include "ShaderCompiler.h"
@@ -1732,6 +1735,15 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 
 		SlowTask.EnterProgressFrame(5);
 
+
+#if USE_EVENT_DRIVEN_ASYNC_LOAD_AT_BOOT_TIME
+		// If we don't do this now and the async loading thread is active, then we will attempt to load this module from a thread
+		if (GEventDrivenLoaderEnabled)
+		{
+			FModuleManager::Get().LoadModule("AssetRegistry");
+		}
+#endif
+
 		// Make sure all UObject classes are registered and default properties have been initialized
 		ProcessNewlyLoadedUObjects();
 
@@ -1851,6 +1863,7 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 	{
 		GUObjectArray.CloseDisregardForGC();
 	}
+	NotifyRegistrationComplete();
 #endif // WITH_COREUOBJECT
 
 #if WITH_ENGINE
@@ -3103,7 +3116,7 @@ void FEngineLoop::Tick()
 		ClearPendingStatGroups();
 #endif
 
-#if WITH_EDITOR
+#if WITH_EDITOR && !UE_BUILD_SHIPPING
 		{
 			QUICK_SCOPE_CYCLE_COUNTER( STAT_FEngineLoop_Tick_AutomationController );
 			static FName AutomationController( "AutomationController" );
