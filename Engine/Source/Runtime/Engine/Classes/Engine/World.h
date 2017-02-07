@@ -2948,9 +2948,6 @@ public:
 	/** Returns the actor count. */
 	int32 GetActorCount();
 	
-	/** Returns the net relevant actor count. */
-	int32 GetNetRelevantActorCount();
-
 public:
 
 	/**
@@ -3281,7 +3278,7 @@ FORCEINLINE_DEBUGGABLE float UWorld::GetUnpausedTimeSeconds() const
 
 FORCEINLINE_DEBUGGABLE float UWorld::GetRealTimeSeconds() const
 {
-	checkSlow(IsInGameThread());
+	checkSlow(!IsInActualRenderingThread());
 	return RealTimeSeconds;
 }
 
