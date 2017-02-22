@@ -1110,10 +1110,11 @@ namespace UnrealBuildTool
 			string ConditionString = "Condition=\"'$(Configuration)|$(Platform)'=='" + Combination.ProjectConfigurationAndPlatformName + "'\"";
 
 			{
+				string ImportGroupProperties = (ProjGenerator != null) ? ProjGenerator.GetVisualStudioImportGroupProperties(Platform) : "";
 				VCProjectFileContent.Append(
 					"	<ImportGroup " + ConditionString + " Label=\"PropertySheets\">" + ProjectFileGenerator.NewLine +
 					"		<Import Project=\"$(UserRootDir)\\Microsoft.Cpp.$(Platform).user.props\" Condition=\"exists('$(UserRootDir)\\Microsoft.Cpp.$(Platform).user.props')\" Label=\"LocalAppDataPlatform\" />" + ProjectFileGenerator.NewLine +
-							ProjGenerator.GetVisualStudioImportGroupProperties(Platform) +
+							ImportGroupProperties +
 					"	</ImportGroup>" + ProjectFileGenerator.NewLine);
 
 				DirectoryReference ProjectDirectory = ProjectFilePath.Directory;
@@ -1156,7 +1157,6 @@ namespace UnrealBuildTool
 
 					// Setup output path
 					UEBuildPlatform BuildPlatform = UEBuildPlatform.GetBuildPlatform(Platform);
-					UEBuildPlatformContext BuildPlatformContext = BuildPlatform.CreateContext(Combination.ProjectTarget.ProjectFilePath);
 
 					// Figure out if this is a monolithic build
 					bool bShouldCompileMonolithic = BuildPlatform.ShouldCompileMonolithicBinary(Platform);
@@ -1164,7 +1164,7 @@ namespace UnrealBuildTool
 
 					// Get the output directory
 					DirectoryReference RootDirectory = UnrealBuildTool.EngineDirectory;
-					if (TargetRulesObject.Type != TargetType.Program && bShouldCompileMonolithic && !TargetRulesObject.bOutputToEngineBinaries)
+					if (TargetRulesObject.Type != TargetType.Program && (bShouldCompileMonolithic || TargetRulesObject.BuildEnvironment == TargetBuildEnvironment.Unique) && !TargetRulesObject.bOutputToEngineBinaries)
 					{
 						if (OnlyGameProject != null && TargetFilePath.IsUnderDirectory(OnlyGameProject.Directory))
 						{
