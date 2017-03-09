@@ -24,7 +24,7 @@ while (<FILE1>)
 	$tempvalue = index($line, "//~ APIDOCTOOL:");
 	if ($tempvalue >= 0)
 	{
-		$lcline = lc($line)
+		$lcline = lc($line);
 		$tempvalue = index($lcline, "document=");
 		if ($tempvalue >= 0)
 		{
@@ -53,7 +53,7 @@ while (<FILE1>)
 		# Discard copyright line.
 		$line = " \n";
 	}
-	elsif ((index($line, "UCLASS(") eq 0) or (index($line, "UENUM(") eq 0) or (index($line, "USTRUCT(") eq 0) or (index($line, "UFUNCTION(") >= 0) or (index($line, "UPROPERTY(") >= 0) or (index($line, "GENERATED_BODY(") >= 0))
+	elsif ((index($line, "UCLASS(") eq 0) or (index($line, "UENUM(") eq 0) or (index($line, "USTRUCT(") eq 0) or (index($line, "UFUNCTION(") >= 0) or (index($line, "UPROPERTY(") >= 0) or (index($line, "GENERATED_BODY(") >= 0) or (index($line, "GENERATED_USTRUCT_BODY(") >= 0))
 	{
 		# Discard these Unreal macros - they confuse Doxygen.
 		$line = " \n";
