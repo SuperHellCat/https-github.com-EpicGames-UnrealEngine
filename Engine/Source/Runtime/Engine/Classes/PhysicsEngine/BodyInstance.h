@@ -70,8 +70,15 @@ enum { NumInlinedPxShapeElements = 32 };
 /** Array that is intended for use when fetching shapes from a rigid body. */
 typedef TArray<physx::PxShape*, TInlineAllocator<NumInlinedPxShapeElements>> FInlinePxShapeArray;
 
+ENGINE_API int32 FillInlinePxShapeArray_AssumesLocked(FInlinePxShapeArray& Array, const physx::PxRigidActor& RigidActor);
+
 /** Helper to fill FInlinePxShapeArray from a PxRigidActor. Returns number of shapes added. */
-ENGINE_API int32 FillInlinePxShapeArray(FInlinePxShapeArray& Array, const physx::PxRigidActor& RigidActor);
+DEPRECATED(4.16, "Please call FillInlinePxShapeArray_AssumesLocked and make sure you obtain the appropriate PhysX scene locks")
+inline int32 FillInlinePxShapeArray(FInlinePxShapeArray& Array, const physx::PxRigidActor& RigidActor)
+{
+	return FillInlinePxShapeArray_AssumesLocked(Array, RigidActor);
+}
+
 
 
 #endif // WITH_PHYSX
@@ -1244,11 +1251,13 @@ private:
 //////////////////////////////////////////////////////////////////////////
 // BodyInstance inlines
 
+//~ APIDOCTOOL: Document=Off
 FORCEINLINE_DEBUGGABLE bool FBodyInstance::OverlapMulti(TArray<struct FOverlapResult>& InOutOverlaps, const class UWorld* World, const FTransform* pWorldToComponent, const FVector& Pos, const FRotator& Rot, ECollisionChannel TestChannel, const FComponentQueryParams& Params, const FCollisionResponseParams& ResponseParams, const FCollisionObjectQueryParams& ObjectQueryParams) const
 {
 	// Pass on to FQuat version
 	return OverlapMulti(InOutOverlaps, World, pWorldToComponent, Pos, Rot.Quaternion(), TestChannel, Params, ResponseParams, ObjectQueryParams);
 }
+//~ APIDOCTOOL: Document=On
 
 FORCEINLINE_DEBUGGABLE bool FBodyInstance::OverlapTestForBodies(const FVector& Position, const FQuat& Rotation, const TArray<FBodyInstance*>& Bodies) const
 {
