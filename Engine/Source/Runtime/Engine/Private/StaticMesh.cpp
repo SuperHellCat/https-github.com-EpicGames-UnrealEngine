@@ -2518,8 +2518,6 @@ void UStaticMesh::PostLoad()
 
 	if (SectionInfoMap.Map.Num() == 0)
 	{
-		UE_LOG(LogStaticMesh, Warning, TEXT("StaticMesh '%s' has no SectionInfoMap. Please re-export from the original source data."), *GetName());
-
 		// Before this serialization issue was fixed, some assets were resaved and permanently lost their section info map.
 		// This attempts to recreate it based on the render data.
 		SectionInfoMap.Clear();
