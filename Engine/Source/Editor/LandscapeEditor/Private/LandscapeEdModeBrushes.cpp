@@ -50,7 +50,6 @@ class FLandscapeBrushCircle : public FLandscapeBrush
 	TArray<UMaterialInstanceDynamic*> BrushMaterialFreeInstances;
 
 protected:
-	FVector2D LastMousePosition;
 	UMaterialInterface* BrushMaterial;
 	TMap<ULandscapeComponent*, UMaterialInstanceDynamic*> BrushMaterialInstanceMap;
 
@@ -58,7 +57,7 @@ protected:
 
 	/** Protected so that only subclasses can create instances of this class. */
 	FLandscapeBrushCircle(FEdModeLandscape* InEdMode, UMaterialInterface* InBrushMaterial)
-		: LastMousePosition(0, 0)
+		: FLandscapeBrush()
 		, BrushMaterial(LandscapeTool::CreateMaterialInstance(InBrushMaterial))
 		, EdMode(InEdMode)
 	{
@@ -234,7 +233,7 @@ public:
 		LastMousePosition = FVector2D(LandscapeX, LandscapeY);
 	}
 
-	virtual FLandscapeBrushData ApplyBrush(const TArray<FLandscapeToolInteractorPosition>& InInteractorPositions) override
+	virtual FLandscapeBrushData ApplyBrush() override
 	{
 		ULandscapeInfo* LandscapeInfo = EdMode->CurrentToolTarget.LandscapeInfo.Get();
 		const float ScaleXY = FMath::Abs(LandscapeInfo->DrawScale.X);
@@ -242,40 +241,11 @@ public:
 		const float Radius = (1.0f - EdMode->UISettings->BrushFalloff) * TotalRadius;
 		const float Falloff = EdMode->UISettings->BrushFalloff * TotalRadius;
 
-		// Cap number of mouse positions to a sensible number
-		TArray<FLandscapeToolInteractorPosition> InteractorPositions;
-		if (InInteractorPositions.Num() > 10)
-		{
-			for (int32 i = 0; i < 10; ++i)
-			{
-				// Scale so we include the first and last of the input positions
-				InteractorPositions.Add(InInteractorPositions[(i * (InInteractorPositions.Num() - 1)) / 9]);
-			}
-		}
-		else
-		{
-			InteractorPositions = InInteractorPositions;
-		}
-
 		FIntRect Bounds;
-		for (const FLandscapeToolInteractorPosition& InteractorPosition : InteractorPositions)
-		{
-			FIntRect SpotBounds;
-			SpotBounds.Min.X = FMath::FloorToInt(InteractorPosition.Position.X - TotalRadius);
-			SpotBounds.Min.Y = FMath::FloorToInt(InteractorPosition.Position.Y - TotalRadius);
-			SpotBounds.Max.X = FMath::CeilToInt( InteractorPosition.Position.X + TotalRadius);
-			SpotBounds.Max.Y = FMath::CeilToInt( InteractorPosition.Position.Y + TotalRadius);
-
-			if (Bounds.IsEmpty())
-			{
-				Bounds = SpotBounds;
-			}
-			else
-			{
-				Bounds.Min = Bounds.Min.ComponentMin(SpotBounds.Min);
-				Bounds.Max = Bounds.Max.ComponentMax(SpotBounds.Max);
-			}
-		}
+		Bounds.Min.X = FMath::FloorToInt(LastMousePosition.X - TotalRadius);
+		Bounds.Min.Y = FMath::FloorToInt(LastMousePosition.Y - TotalRadius);
+		Bounds.Max.X = FMath::CeilToInt(LastMousePosition.X + TotalRadius);
+		Bounds.Max.Y = FMath::CeilToInt(LastMousePosition.Y + TotalRadius);
 
 		// Clamp to landscape bounds
 		int32 MinX, MaxX, MinY, MaxY;
@@ -288,13 +258,12 @@ public:
 
 		FLandscapeBrushData BrushData(Bounds);
 
-		for (const FLandscapeToolInteractorPosition& InteractorPosition : InteractorPositions)
 		{
 			FIntRect SpotBounds;
-			SpotBounds.Min.X = FMath::Max(FMath::FloorToInt(InteractorPosition.Position.X - TotalRadius), Bounds.Min.X);
-			SpotBounds.Min.Y = FMath::Max(FMath::FloorToInt(InteractorPosition.Position.Y - TotalRadius), Bounds.Min.Y);
-			SpotBounds.Max.X = FMath::Min(FMath::CeilToInt( InteractorPosition.Position.X + TotalRadius), Bounds.Max.X);
-			SpotBounds.Max.Y = FMath::Min(FMath::CeilToInt( InteractorPosition.Position.Y + TotalRadius), Bounds.Max.Y);
+			SpotBounds.Min.X = FMath::Max(FMath::FloorToInt(LastMousePosition.X - TotalRadius), Bounds.Min.X);
+			SpotBounds.Min.Y = FMath::Max(FMath::FloorToInt(LastMousePosition.Y - TotalRadius), Bounds.Min.Y);
+			SpotBounds.Max.X = FMath::Min(FMath::CeilToInt( LastMousePosition.X + TotalRadius), Bounds.Max.X);
+			SpotBounds.Max.Y = FMath::Min(FMath::CeilToInt( LastMousePosition.Y + TotalRadius), Bounds.Max.Y);
 
 			for (int32 Y = SpotBounds.Min.Y; Y < SpotBounds.Max.Y; Y++)
 			{
@@ -306,7 +275,7 @@ public:
 					if (PrevAmount < 1.0f)
 					{
 						// Distance from mouse
-						float MouseDist = FMath::Sqrt(FMath::Square(InteractorPosition.Position.X - (float)X) + FMath::Square(InteractorPosition.Position.Y - (float)Y));
+						float MouseDist = FMath::Sqrt(FMath::Square(LastMousePosition.X - (float)X) + FMath::Square(LastMousePosition.Y - (float)Y));
 
 						float PaintAmount = CalculateFalloff(MouseDist, Radius, Falloff);
 
@@ -350,13 +319,13 @@ class FLandscapeBrushComponent : public FLandscapeBrush
 	virtual FText GetDisplayName() override { return NSLOCTEXT("UnrealEd", "LandscapeMode_Brush_Component", "Component"); };
 
 protected:
-	FVector2D LastMousePosition;
 	UMaterialInterface* BrushMaterial;
 public:
 	FEdModeLandscape* EdMode;
 
 	FLandscapeBrushComponent(FEdModeLandscape* InEdMode)
-		: BrushMaterial(nullptr)
+		: FLandscapeBrush()
+		, BrushMaterial(nullptr)
 		, EdMode(InEdMode)
 	{
 		UMaterial* BaseBrushMaterial = LoadObject<UMaterial>(nullptr, TEXT("/Engine/EditorLandscapeResources/SelectBrushMaterial.SelectBrushMaterial"));
@@ -458,7 +427,7 @@ public:
 		LastMousePosition = FVector2D(LandscapeX, LandscapeY);
 	}
 
-	virtual FLandscapeBrushData ApplyBrush(const TArray<FLandscapeToolInteractorPosition>& InteractorPositions) override
+	virtual FLandscapeBrushData ApplyBrush() override
 	{
 		// Selection Brush only works for 
 		ULandscapeInfo* LandscapeInfo = EdMode->CurrentToolTarget.LandscapeInfo.Get();
@@ -687,7 +656,7 @@ public:
 		return TOptional<bool>();
 	}
 
-	virtual FLandscapeBrushData ApplyBrush(const TArray<FLandscapeToolInteractorPosition>& InteractorPositions) override
+	virtual FLandscapeBrushData ApplyBrush() override
 	{
 		// Selection Brush only works for 
 		ALandscapeGizmoActiveActor* Gizmo = EdMode->CurrentGizmoActor.Get();
@@ -809,7 +778,7 @@ public:
 	{
 	}
 
-	virtual FLandscapeBrushData ApplyBrush(const TArray<FLandscapeToolInteractorPosition>& InteractorPositions) override
+	virtual FLandscapeBrushData ApplyBrush() override
 	{
 		return FLandscapeBrushData();
 	}
@@ -841,7 +810,7 @@ public:
 	{
 	}
 
-	virtual FLandscapeBrushData ApplyBrush(const TArray<FLandscapeToolInteractorPosition>& InteractorPositions) override
+	virtual FLandscapeBrushData ApplyBrush() override
 	{
 		return FLandscapeBrushData();
 	}
@@ -1025,7 +994,7 @@ public:
 
 	virtual ELandscapeBrushType GetBrushType() override { return ELandscapeBrushType::Alpha; }
 
-	virtual FLandscapeBrushData ApplyBrush(const TArray<FLandscapeToolInteractorPosition>& InteractorPositions) override
+	virtual FLandscapeBrushData ApplyBrush() override
 	{
 		ULandscapeInfo* LandscapeInfo = EdMode->CurrentToolTarget.LandscapeInfo.Get();
 		const float ScaleXY = FMath::Abs(LandscapeInfo->DrawScale.X);
@@ -1041,7 +1010,6 @@ public:
 		Bounds.Min.Y = FMath::FloorToInt(LastMousePosition.Y - TotalRadius);
 		Bounds.Max.X = FMath::CeilToInt( LastMousePosition.X + TotalRadius);
 		Bounds.Max.Y = FMath::CeilToInt( LastMousePosition.Y + TotalRadius);
-
 
 		// Clamp to landscape bounds
 		int32 MinX, MaxX, MinY, MaxY;
@@ -1220,7 +1188,7 @@ public:
 		return new FLandscapeBrushAlpha(InEdMode, AlphaBrushMaterial);
 	}
 
-	virtual FLandscapeBrushData ApplyBrush(const TArray<FLandscapeToolInteractorPosition>& InteractorPositions) override
+	virtual FLandscapeBrushData ApplyBrush() override
 	{
 		ULandscapeInfo* LandscapeInfo = EdMode->CurrentToolTarget.LandscapeInfo.Get();
 		if (EdMode->UISettings->bAlphaBrushAutoRotate && OldMousePosition.IsZero())

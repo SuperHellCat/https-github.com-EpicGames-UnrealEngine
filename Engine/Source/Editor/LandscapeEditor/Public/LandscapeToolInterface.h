@@ -19,20 +19,6 @@ class UMaterialInterface;
 class UViewportInteractor;
 struct FViewportClick;
 
-// FLandscapeToolMousePosition - Struct to store mouse positions since the last time we applied the brush
-struct FLandscapeToolInteractorPosition
-{
-	// Stored in heightmap space.
-	FVector2D Position;
-	bool bModifierPressed;
-
-	FLandscapeToolInteractorPosition(FVector2D InPosition, const bool bInModifierPressed)
-		: Position(InPosition)
-		, bModifierPressed(bInModifierPressed)
-	{
-	}
-};
-
 enum class ELandscapeBrushType
 {
 	Normal = 0,
@@ -97,8 +83,12 @@ public:
 class FLandscapeBrush : public FGCObject
 {
 public:
+	FLandscapeBrush() :
+		LastMousePosition(FVector2D::ZeroVector)
+	{}
+
 	virtual void MouseMove(float LandscapeX, float LandscapeY) = 0;
-	virtual FLandscapeBrushData ApplyBrush(const TArray<FLandscapeToolInteractorPosition>& InteractorPositions) = 0;
+	virtual FLandscapeBrushData ApplyBrush() = 0;
 	virtual TOptional<bool> InputKey(FEditorViewportClient* InViewportClient, FViewport* InViewport, FKey InKey, EInputEvent InEvent) { return TOptional<bool>(); }
 	virtual void Tick(FEditorViewportClient* ViewportClient, float DeltaTime) {};
 	virtual void BeginStroke(float LandscapeX, float LandscapeY, class FLandscapeTool* CurrentTool);
@@ -111,8 +101,15 @@ public:
 	virtual FText GetDisplayName() = 0;
 	virtual ELandscapeBrushType GetBrushType() { return ELandscapeBrushType::Normal; }
 
+	/** Gets the last position on the landscape aimed at. */
+	FVector2D GetLastPosition() const { return LastMousePosition; };
+
 	// FGCObject interface
 	virtual void AddReferencedObjects(FReferenceCollector& Collector) override {}
+
+protected:
+	/** Last position on the landscape aimed at. */
+	FVector2D LastMousePosition;
 };
 
 struct FLandscapeBrushSet

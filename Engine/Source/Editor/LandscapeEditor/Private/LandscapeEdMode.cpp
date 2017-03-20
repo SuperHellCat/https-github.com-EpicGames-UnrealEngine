@@ -504,7 +504,8 @@ void FEdModeLandscape::Exit()
 		ViewportWorldInteraction->OnViewportInteractionInputAction().RemoveAll(this);
 		ViewportWorldInteraction->OnViewportInteractionHoverUpdate().RemoveAll(this);
 	}
-	
+	InteractorPainting = nullptr;
+
 	FEditorSupportDelegates::WorldChange.Remove(OnWorldChangeDelegateHandle);
 	GetWorld()->OnLevelsChanged().Remove(OnLevelsChangedDelegateHandle);
 	UMaterial::OnMaterialCompilationFinished().Remove(OnMaterialCompilationFinishedDelegateHandle);
@@ -576,6 +577,12 @@ void FEdModeLandscape::Exit()
 
 void FEdModeLandscape::OnVRHoverUpdate(UViewportInteractor* Interactor, FVector& HoverImpactPoint, bool& bWasHandled)
 {
+	// If there is no designated interactor to interact with the landscape use one that has a laser.
+	if (InteractorPainting == nullptr && Interactor != nullptr && !Interactor->GetIsLaserBlocked())
+	{
+		InteractorPainting = Interactor;
+	}
+
 	if (InteractorPainting != nullptr && InteractorPainting == Interactor && IVREditorModule::Get().IsVREditorModeActive())
 	{
 		UVREditorMode* VREditorMode = Cast<UVREditorMode>( GEditor->GetEditorWorldExtensionsManager()->GetEditorWorldExtensions( GetWorld() )->FindExtension( UVREditorMode::StaticClass() ) );
@@ -589,13 +596,10 @@ void FEdModeLandscape::OnVRHoverUpdate(UViewportInteractor* Interactor, FVector&
 				FVector LaserPointerStart, LaserPointerEnd;
 				if (Interactor->GetLaserPointer( /* Out */ LaserPointerStart, /* Out */ LaserPointerEnd))
 				{
-					if( LandscapeTrace( LaserPointerStart, LaserPointerEnd, HitLocation ) )
+					if (LandscapeTrace( LaserPointerStart, LaserPointerEnd, HitLocation ) && CurrentBrush)
 					{
-						if (CurrentBrush)
-						{
-							// Inform the brush of the current location, to update the cursor
-							CurrentBrush->MouseMove(HitLocation.X, HitLocation.Y);
-						}
+						// Inform the brush of the current location, to update the cursor
+						CurrentBrush->MouseMove(HitLocation.X, HitLocation.Y);
 					}
 				}
 			}
@@ -609,61 +613,56 @@ void FEdModeLandscape::OnVRAction(FEditorViewportClient& ViewportClient, UViewpo
 	// Never show the traditional Unreal transform widget.  It doesn't work in VR because we don't have hit proxies.
 	ViewportClient.EngineShowFlags.SetModeWidgets(false);
 
-	if (VREditorMode != nullptr && VREditorMode->IsActive() && Interactor != nullptr && Interactor->GetDraggingMode() == EViewportInteractionDraggingMode::Nothing)
+	if (VREditorMode != nullptr && VREditorMode->IsActive() && Interactor != nullptr && Interactor->GetDraggingMode() == EViewportInteractionDraggingMode::Nothing && Action.ActionType == ViewportWorldActionTypes::SelectAndMove)
 	{
-		if (Action.ActionType == ViewportWorldActionTypes::SelectAndMove)
+		const UVREditorInteractor* VRInteractor = Cast<UVREditorInteractor>(Interactor);
+
+		// Begin landscape brush
+		if (Action.Event == IE_Pressed && !VRInteractor->IsHoveringOverUI() && !VRInteractor->IsHoveringOverPriorityType() )
 		{
-			const UVREditorInteractor* VRInteractor = Cast<UVREditorInteractor>(Interactor);
-
-			// Begin landscape brush
-			if (Action.Event == IE_Pressed && !VRInteractor->IsHoveringOverUI() && !VRInteractor->IsHoveringOverPriorityType() )
+			if (ViewportClient.Viewport != nullptr && ViewportClient.Viewport == ToolActiveViewport)
 			{
-				if (ViewportClient.Viewport != nullptr && ViewportClient.Viewport == ToolActiveViewport)
-				{
-					CurrentTool->EndTool(&ViewportClient);
-					ToolActiveViewport = nullptr;
-				}
+				CurrentTool->EndTool(&ViewportClient);
+				ToolActiveViewport = nullptr;
+			}
 
-				if (CurrentTool && (CurrentTool->GetSupportedTargetTypes() == ELandscapeToolTargetTypeMask::NA || CurrentToolTarget.TargetType != ELandscapeToolTargetType::Invalid))
+			if (CurrentTool && (CurrentTool->GetSupportedTargetTypes() == ELandscapeToolTargetTypeMask::NA || CurrentToolTarget.TargetType != ELandscapeToolTargetType::Invalid))
+			{
+				FVector HitLocation;
+				FVector LaserPointerStart, LaserPointerEnd;
+				if (Interactor->GetLaserPointer( /* Out */ LaserPointerStart, /* Out */ LaserPointerEnd))
 				{
-					FVector HitLocation;
-					FVector LaserPointerStart, LaserPointerEnd;
-					if (Interactor->GetLaserPointer( /* Out */ LaserPointerStart, /* Out */ LaserPointerEnd))
+					if (LandscapeTrace(LaserPointerStart, LaserPointerEnd, HitLocation))
 					{
-						if (LandscapeTrace(LaserPointerStart, LaserPointerEnd, HitLocation))
-						{
-							if (!(CurrentToolTarget.TargetType == ELandscapeToolTargetType::Weightmap && CurrentToolTarget.LayerInfo == NULL))
+						if (!(CurrentToolTarget.TargetType == ELandscapeToolTargetType::Weightmap && CurrentToolTarget.LayerInfo == NULL))
+						{ 
+							if( CurrentTool->BeginTool( &ViewportClient, CurrentToolTarget, HitLocation, Interactor ) )
 							{
-								if( CurrentTool->BeginTool( &ViewportClient, CurrentToolTarget, HitLocation, Interactor ) )
-								{
-									ToolActiveViewport = ViewportClient.Viewport;
-								}
+								ToolActiveViewport = ViewportClient.Viewport;
 							}
-
-							bIsPaintingInVR = true;
-							bWasHandled = true;
-							bOutIsInputCaptured = false;
-
-							InteractorPainting = Interactor;
 						}
+
+						bIsPaintingInVR = true;
+						bWasHandled = true;
+						bOutIsInputCaptured = false;
+
+						InteractorPainting = Interactor;
 					}
 				}
 			}
-
-			// End landscape brush
-			else if (Action.Event == IE_Released)
+		}
+		// End landscape brush
+		else if (Action.Event == IE_Released)
+		{
+			if (CurrentTool && ViewportClient.Viewport != nullptr && ViewportClient.Viewport == ToolActiveViewport)
 			{
-				if (CurrentTool && ViewportClient.Viewport != nullptr && ViewportClient.Viewport == ToolActiveViewport)
-				{
-					CurrentTool->EndTool(&ViewportClient);
-					ToolActiveViewport = nullptr;
-				}
-
-				bIsPaintingInVR = false;
+				CurrentTool->EndTool(&ViewportClient);
+				ToolActiveViewport = nullptr;
 			}
+
+			bIsPaintingInVR = false;
 		}
 	}
-
 }
 
 /** FEdMode: Called once per frame */

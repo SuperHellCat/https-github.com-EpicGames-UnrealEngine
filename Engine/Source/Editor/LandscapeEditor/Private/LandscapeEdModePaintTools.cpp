@@ -94,17 +94,17 @@ public:
 	{
 	}
 
-	void Apply(FEditorViewportClient* ViewportClient, FLandscapeBrush* Brush, const ULandscapeEditorObject* UISettings, const TArray<FLandscapeToolInteractorPosition>& InteractorPositions)
+	void Apply(FEditorViewportClient* ViewportClient, FLandscapeBrush* Brush, const ULandscapeEditorObject* UISettings, const bool bInverted)
 	{
 		// Invert when holding Shift
 		//UE_LOG(LogLandscape, Log, TEXT("bInvert = %d"), bInvert);
-		bool bInvert = InteractorPositions.Last().bModifierPressed;
+		bool bInvert = bInverted;
 
 		if (bIsWhitelistMode)
 		{
 			// Get list of components to delete from brush
 			// TODO - only retrieve bounds as we don't need the vert data
-			FLandscapeBrushData BrushInfo = Brush->ApplyBrush(InteractorPositions);
+			FLandscapeBrushData BrushInfo = Brush->ApplyBrush();
 			if (!BrushInfo)
 			{
 				return;
@@ -143,7 +143,7 @@ public:
 		}
 
 		// Get list of verts to update
-		FLandscapeBrushData BrushInfo = Brush->ApplyBrush(InteractorPositions);
+		FLandscapeBrushData BrushInfo = Brush->ApplyBrush();
 		if (!BrushInfo)
 		{
 			return;
@@ -290,14 +290,14 @@ public:
 	{
 	}
 
-	void Apply(FEditorViewportClient* ViewportClient, FLandscapeBrush* Brush, const ULandscapeEditorObject* UISettings, const TArray<FLandscapeToolInteractorPosition>& InteractorPositions)
+	void Apply(FEditorViewportClient* ViewportClient, FLandscapeBrush* Brush, const ULandscapeEditorObject* UISettings, const bool bInverted)
 	{
 		// Invert when holding Shift
 		//UE_LOG(LogLandscape, Log, TEXT("bInvert = %d"), bInvert);
-		bool bInvert = InteractorPositions.Last().bModifierPressed;
+		bool bInvert = bInverted;
 
 		// Get list of verts to update
-		FLandscapeBrushData BrushInfo = Brush->ApplyBrush(InteractorPositions);
+		FLandscapeBrushData BrushInfo = Brush->ApplyBrush();
 		if (!BrushInfo)
 		{
 			return;
@@ -514,12 +514,12 @@ public:
 	{
 	}
 
-	void Apply(FEditorViewportClient* ViewportClient, FLandscapeBrush* Brush, const ULandscapeEditorObject* UISettings, const TArray<FLandscapeToolInteractorPosition>& InteractorPositions)
+	void Apply(FEditorViewportClient* ViewportClient, FLandscapeBrush* Brush, const ULandscapeEditorObject* UISettings, const bool bInverted)
 	{
 		if (!this->LandscapeInfo) return;
 
 		// Get list of verts to update
-		FLandscapeBrushData BrushInfo = Brush->ApplyBrush(InteractorPositions);
+		FLandscapeBrushData BrushInfo = Brush->ApplyBrush();
 		if (!BrushInfo)
 		{
 			return;
@@ -657,15 +657,16 @@ public:
 		}
 	}
 
-	void Apply(FEditorViewportClient* ViewportClient, FLandscapeBrush* Brush, const ULandscapeEditorObject* UISettings, const TArray<FLandscapeToolInteractorPosition>& InteractorPositions)
+	void Apply(FEditorViewportClient* ViewportClient, FLandscapeBrush* Brush, const ULandscapeEditorObject* UISettings, const bool bInverted)
 	{
 		if (!this->LandscapeInfo) return;
 
 		if (!bInitializedFlattenHeight || (UISettings->bPickValuePerApply && bTargetIsHeightmap))
 		{
 			bInitializedFlattenHeight = false;
-			float FlattenX = InteractorPositions[0].Position.X;
-			float FlattenY = InteractorPositions[0].Position.Y;
+			const FVector2D LastPosition = Brush->GetLastPosition();
+			float FlattenX = LastPosition.X;
+			float FlattenY = LastPosition.Y;
 			int32 FlattenHeightX = FMath::FloorToInt(FlattenX);
 			int32 FlattenHeightY = FMath::FloorToInt(FlattenY);
 
@@ -684,7 +685,7 @@ public:
 
 
 		// Get list of verts to update
-		FLandscapeBrushData BrushInfo = Brush->ApplyBrush(InteractorPositions);
+		FLandscapeBrushData BrushInfo = Brush->ApplyBrush();
 		if (!BrushInfo)
 		{
 			return;
@@ -927,12 +928,12 @@ public:
 	{
 	}
 
-	void Apply(FEditorViewportClient* ViewportClient, FLandscapeBrush* Brush, const ULandscapeEditorObject* UISettings, const TArray<FLandscapeToolInteractorPosition>& InteractorPositions)
+	void Apply(FEditorViewportClient* ViewportClient, FLandscapeBrush* Brush, const ULandscapeEditorObject* UISettings, const bool bInverted)
 	{
 		if (!this->LandscapeInfo) return;
 
 		// Get list of verts to update
-		FLandscapeBrushData BrushInfo = Brush->ApplyBrush(InteractorPositions);
+		FLandscapeBrushData BrushInfo = Brush->ApplyBrush();
 		if (!BrushInfo)
 		{
 			return;

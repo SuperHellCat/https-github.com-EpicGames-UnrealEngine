@@ -54,7 +54,7 @@ public:
 	{
 	}
 
-	void Apply(FEditorViewportClient* ViewportClient, FLandscapeBrush* Brush, const ULandscapeEditorObject* UISettings, const TArray<FLandscapeToolInteractorPosition>& InteractorPositions)
+	void Apply(FEditorViewportClient* ViewportClient, FLandscapeBrush* Brush, const ULandscapeEditorObject* UISettings, const bool bInverted)
 	{
 		if (!LandscapeInfo)
 		{
@@ -64,7 +64,7 @@ public:
 		// Get list of verts to update
 		// TODO - only retrieve bounds as we don't need the data
 		// or use the brush data?
-		FLandscapeBrushData BrushInfo = Brush->ApplyBrush(InteractorPositions);
+		FLandscapeBrushData BrushInfo = Brush->ApplyBrush();
 		if (!BrushInfo)
 		{
 			return;

@@ -1309,56 +1309,40 @@ template<class TStrokeClass>
 class FLandscapeToolBase : public FLandscapeTool
 {
 public:
-	FLandscapeToolBase(FEdModeLandscape* InEdMode)
-		: EdMode(InEdMode)
-		, bToolActive(false)
-		, bCanToolBeActivated(true)
+	FLandscapeToolBase(FEdModeLandscape* InEdMode) : 
+		LastInteractorPosition(FVector2D::ZeroVector),
+		LastInteractorInverted(false),
+		TimeSinceLastInteractorMove(0.0f),
+		EdMode(InEdMode), 
+		bCanToolBeActivated(true),
+		ToolStroke()
 	{
 	}
 
 	virtual bool BeginTool(FEditorViewportClient* ViewportClient, const FLandscapeToolTarget& InTarget, const FVector& InHitLocation, const UViewportInteractor* Interactor = nullptr) override
 	{
-		if (!ensure(InteractorPositions.Num() == 0))
-		{
-			InteractorPositions.Empty(1);
-		}
-
-		if( !bToolActive )
+		if( !IsToolActive() )
 		{
 			ToolStroke.Emplace( EdMode, ViewportClient, InTarget );
 			EdMode->CurrentBrush->BeginStroke( InHitLocation.X, InHitLocation.Y, this );
 		}
 
-		bToolActive = true;
-
 		// Save the mouse position
 		LastInteractorPosition = FVector2D(InHitLocation);
-		InteractorPositions.Emplace(LastInteractorPosition, ViewportClient ? IsModifierPressed(ViewportClient, Interactor) : false); // Copy tool sometimes activates without a specific viewport via ctrl+c hotkey
+		LastInteractorInverted = IsModifierPressed(ViewportClient, Interactor);
 		TimeSinceLastInteractorMove = 0.0f;
 
-		ToolStroke->Apply(ViewportClient, EdMode->CurrentBrush, EdMode->UISettings, InteractorPositions);
-
-		InteractorPositions.Empty(1);
+		ToolStroke->Apply(ViewportClient, EdMode->CurrentBrush, EdMode->UISettings, LastInteractorInverted);
 		return true;
 	}
 
 	virtual void Tick(FEditorViewportClient* ViewportClient, float DeltaTime) override
 	{
-		if (bToolActive)
+		if (IsToolActive())
 		{
-			if (InteractorPositions.Num() > 0)
-			{
-				ToolStroke->Apply(ViewportClient, EdMode->CurrentBrush, EdMode->UISettings, InteractorPositions);
-				ViewportClient->Invalidate(false, false);
-				InteractorPositions.Empty(1);
-			}
-			else if (TStrokeClass::UseContinuousApply && TimeSinceLastInteractorMove >= 0.25f)
-			{
-				InteractorPositions.Emplace(LastInteractorPosition, IsModifierPressed(ViewportClient));
-				ToolStroke->Apply(ViewportClient, EdMode->CurrentBrush, EdMode->UISettings, InteractorPositions);
-				ViewportClient->Invalidate(false, false);
-				InteractorPositions.Empty(1);
-			}
+			ToolStroke->Apply(ViewportClient, EdMode->CurrentBrush, EdMode->UISettings, LastInteractorInverted);
+			ViewportClient->Invalidate(false, false);
+
 			TimeSinceLastInteractorMove += DeltaTime;
 
 			// Prevent landscape from baking textures while tool stroke is active
@@ -1368,14 +1352,12 @@ public:
 
 	virtual void EndTool(FEditorViewportClient* ViewportClient) override
 	{
-		if (bToolActive && InteractorPositions.Num())
+		if (IsToolActive())
 		{
-			ToolStroke->Apply(ViewportClient, EdMode->CurrentBrush, EdMode->UISettings, InteractorPositions);
-			InteractorPositions.Empty(1);
+			ToolStroke->Apply(ViewportClient, EdMode->CurrentBrush, EdMode->UISettings, LastInteractorInverted);
 		}
 
 		ToolStroke.Reset();
-		bToolActive = false;
 		EdMode->CurrentBrush->EndStroke();
 		EdMode->UpdateLayerUsageInformation();
 	}
@@ -1391,13 +1373,12 @@ public:
 				EdMode->CurrentBrush->MouseMove(HitLocation.X, HitLocation.Y);
 			}
 
-			if (bToolActive)
+			if (IsToolActive())
 			{
 				// Save the interactor position
-				if (InteractorPositions.Num() == 0 || LastInteractorPosition != FVector2D(HitLocation))
+				if (LastInteractorPosition != FVector2D(HitLocation))
 				{
 					LastInteractorPosition = FVector2D(HitLocation);
-					InteractorPositions.Emplace(LastInteractorPosition, IsModifierPressed(ViewportClient));
 				}
 				TimeSinceLastInteractorMove = 0.0f;
 			}
@@ -1406,17 +1387,21 @@ public:
 		return true;
 	}
 
-	virtual bool IsToolActive() const override { return bToolActive;  }
+	virtual bool IsToolActive() const override { return ToolStroke.IsSet();  }
 
 	virtual void SetCanToolBeActivated(bool Value) { bCanToolBeActivated = Value; }
 	virtual bool CanToolBeActivated() const {	return bCanToolBeActivated; }
 
 protected:
-	TArray<FLandscapeToolInteractorPosition> InteractorPositions;
+
+	/** The position on the lanscape */
 	FVector2D LastInteractorPosition;
+
+	/** If modifier was pressed on begin tool causing an inverted action if there is any */
+	bool LastInteractorInverted;
+
 	float TimeSinceLastInteractorMove;
 	FEdModeLandscape* EdMode;
-	bool bToolActive;
 	bool bCanToolBeActivated;
 	TOptional<TStrokeClass> ToolStroke;
 
