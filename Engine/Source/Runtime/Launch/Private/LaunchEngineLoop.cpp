@@ -59,6 +59,7 @@
 #endif
 
 #if WITH_EDITOR
+	#include "Blueprint/BlueprintSupport.h"
 	#include "EditorStyleSet.h"
 	#include "Misc/RemoteConfigIni.h"
 	#include "EditorCommandLineUtils.h"
@@ -1662,6 +1663,7 @@ int32 FEngineLoop::PreInit( const TCHAR* CmdLine )
 			Commandline.Contains(TEXT("run=cook")) == false )
 		// if (FParse::Param(FCommandLine::Get(), TEXT("Multiprocess")) == false)
 		{
+			CompileGlobalShaderMaps(false);
 			if (GetGlobalShaderMap(GMaxRHIFeatureLevel) == nullptr && GIsRequestingExit)
 			{
 				// This means we can't continue without the global shader map.
@@ -3458,6 +3460,10 @@ bool FEngineLoop::AppInit( )
 
 	// Now that configs have been initialized, setup stack walking options
 	FPlatformStackWalk::Init();
+
+#if WITH_EDITOR
+	FBlueprintSupport::InitializeCompilationManager();
+#endif
 
 	CheckForPrintTimesOverride();
 

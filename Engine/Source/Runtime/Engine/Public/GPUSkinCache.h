@@ -80,9 +80,6 @@ public:
 		RWStrideInFloats = 5,
 		// 3 ints for normal, 3 ints for tangent, 1 for orientation = 7, rounded up to 8 as it should result in faster math and caching
 		IntermediateAccumBufferNumInts = 8,
-		// max vertex count we support once the r.SkinCache.RecomputeTangents feature is used (GPU memory in bytes = n * sizeof(int) * IntermediateAccumBufferNumInts)
-		// 4*1024 is the conservative size needed for Senua in CharDemo with NinjaTheory (this should be a cvar and project specific or dynamic, with only using the feature on RecomputeTangents it can be much less)
-		IntermediateAccumBufferSizeInKB = 4 * 1024,
 	};
 
 	FGPUSkinCache();
@@ -262,7 +259,7 @@ public:
 
 	ENGINE_API void TransitionToReadable(FRHICommandList& RHICmdList);
 	ENGINE_API void TransitionToWriteable(FRHICommandList& RHICmdList);
-
+	ENGINE_API void AdvanceFrameUpdate(FRHICommandList& RHICmdList);
 
 private:
 	// @param FrameNumber from GFrameNumber or better ViewFamily.FrameNumber
@@ -285,16 +282,10 @@ private:
 	bool InternalIsElementProcessed(uint32 FrameNumber, int32 Key) const;
 
 
-	uint32 ComputeRecomputeTangentMaxVertexCount() const
-	{
-		uint32 IntermediateAccumBufferSizeInB = FGPUSkinCache::IntermediateAccumBufferSizeInKB * 1024;
-		return IntermediateAccumBufferSizeInB / (sizeof(int32) * FGPUSkinCache::IntermediateAccumBufferNumInts);
-	}
-
-	// from GFrameNumber or better ViewFamily.FrameNumber
 	bool bInitialized : 1;
 
-	uint32	SkinCacheFrameNumber;
+	// Used internally to manage resource transitions
+	uint32	InternalUpdateCount;
 
 	int		CacheMaxVectorCount;
 	int		CacheCurrentFloatOffset;

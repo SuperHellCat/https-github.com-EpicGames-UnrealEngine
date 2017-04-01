@@ -41,9 +41,9 @@ enum ETextureStreamingState
 	// Mip data is in the process of being uploaded to the GPU.
 	TexState_InProgress_Upload			= 3,
 	// Mip data has been loaded in to system memory and is ready to be transferred to the GPU.
-	TexState_ReadyFor_Upload			= 4,
+	TexState_ReadyFor_Upload			= 10,
 	// We're currently loading in mip data.
-	TexState_InProgress_Loading			= 5,
+	TexState_InProgress_Loading			= 11,
 	// ...
 	// States 2+N means we're currently loading in N mips
 	// ...
@@ -669,6 +669,8 @@ public:
 	virtual void ClampSize(int32 SizeX,int32 SizeY) {}
 
 	// FRenderTarget interface.
+	virtual uint32 GetSizeX() const = 0;
+	virtual uint32 GetSizeY() const = 0;
 	virtual FIntPoint GetSizeXY() const = 0;
 
 	/** 
@@ -736,6 +738,19 @@ public:
 	// FDeferredClearResource interface
 
 	// FRenderTarget interface.
+	/** 
+	 * @return width of the target
+	 */
+	virtual uint32 GetSizeX() const override;
+
+	/** 
+	 * @return height of the target
+	 */
+	virtual uint32 GetSizeY() const override;
+
+	/**
+	 * @return dimensions of the target
+	 */
 	virtual FIntPoint GetSizeXY() const override;
 
 	/** 
@@ -811,6 +826,16 @@ public:
 
 	// FRenderTarget interface.
 
+	/** 
+	 * @return width of the target
+	 */
+	virtual uint32 GetSizeX() const override;
+
+	/** 
+	 * @return height of the target
+	 */
+	virtual uint32 GetSizeY() const override;
+
 	/**
 	 * @return dimensions of the target
 	 */
@@ -870,3 +895,5 @@ private:
 };
 
 ENGINE_API FName GetDefaultTextureFormatName( const class ITargetPlatform* TargetPlatform, const class UTexture* Texture, const class FConfigFile& EngineSettings, bool bSupportDX11TextureFormats );
+// returns all the texture formats which can be returned by GetDefaultTextureFormatName
+ENGINE_API void GetAllDefaultTextureFormats( const class ITargetPlatform* TargetPlatform, TArray<FName>& OutFormats, bool bSupportDX11TextureFormats);

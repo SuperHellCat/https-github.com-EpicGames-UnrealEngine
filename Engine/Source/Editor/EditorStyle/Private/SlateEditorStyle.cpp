@@ -3745,6 +3745,9 @@ void FSlateEditorStyle::FStyle::SetupGraphEditorStyles()
 		Set( "Graph.Node.ShadowSelected", new BOX_BRUSH( "/Graph/RegularNode_shadow_selected", FMargin(18.0f/64.0f) ) );
 		Set( "Graph.Node.Shadow", new BOX_BRUSH( "/Graph/RegularNode_shadow", FMargin(18.0f/64.0f) ) );
 
+		Set( "Graph.Node.RerouteShadow", new IMAGE_BRUSH( "/Graph/RerouteNode_shadow", FVector2D(64.0f, 64.0f) ) );
+		Set( "Graph.Node.RerouteShadowSelected", new IMAGE_BRUSH( "/Graph/RerouteNode_shadow_selected", FVector2D(64.0f, 64.0f) ) );
+
 		Set( "Graph.CompactNode.ShadowSelected", new BOX_BRUSH( "/Graph/MathNode_shadow_selected", FMargin(18.0f/64.0f) ) );
 
 		Set( "Graph.Node.CommentBubble", new BOX_BRUSH( "Old/Graph/CommentBubble", FMargin(8/32.0f) ) );
@@ -4619,6 +4622,10 @@ void FSlateEditorStyle::FStyle::SetupLevelEditorStyle()
 		Set( "LevelEditor.MeshPaintMode.Selected", new IMAGE_BRUSH( "Icons/icon_Mode_Meshpaint_selected_40x", Icon40x40 ) );
 		Set( "LevelEditor.MeshPaintMode.Selected.Small", new IMAGE_BRUSH( "Icons/icon_Mode_Meshpaint_selected_40x", Icon20x20 ) );
 
+		Set("LevelEditor.MeshPaintMode.TexturePaint", new IMAGE_BRUSH("Icons/TexturePaint_40x", Icon40x40));
+		Set("LevelEditor.MeshPaintMode.ColorPaint", new IMAGE_BRUSH("Icons/VertexColorPaint_40x", Icon40x40));
+		Set("LevelEditor.MeshPaintMode.WeightPaint", new IMAGE_BRUSH("Icons/WeightPaint_40x", Icon40x40));
+
 		Set( "LevelEditor.LandscapeMode", new IMAGE_BRUSH( "Icons/icon_Mode_Landscape_40x", Icon40x40 ) );
 		Set( "LevelEditor.LandscapeMode.Small", new IMAGE_BRUSH( "Icons/icon_Mode_Landscape_40x", Icon20x20 ) );
 		Set( "LevelEditor.LandscapeMode.Selected", new IMAGE_BRUSH( "Icons/icon_Mode_Landscape_selected_40x", Icon40x40 ) );
@@ -5014,11 +5021,11 @@ void FSlateEditorStyle::FStyle::SetupLevelEditorStyle()
 	// Mesh Paint
 	{
 		Set( "MeshPaint.Fill", new IMAGE_BRUSH( "/Icons/icon_MeshPaint_Fill_16x", Icon16x16 ) );
-		Set( "MeshPaint.CopyInstVertColors", new IMAGE_BRUSH( "/Icons/icon_MeshPaint_Copy_16x", Icon16x16 ) );
+		Set( "MeshPaint.PropagateColors", new IMAGE_BRUSH( "/Icons/icon_MeshPaint_Copy_16x", Icon16x16 ) );
 		Set( "MeshPaint.ImportVertColors", new IMAGE_BRUSH( "/Icons/icon_MeshPaint_Import_16x", Icon16x16 ) );
 		Set( "MeshPaint.FindInCB", new IMAGE_BRUSH( "/Icons/icon_MeshPaint_Find_16x", Icon16x16 ) );
 		Set( "MeshPaint.SavePackage", new IMAGE_BRUSH( "/Icons/icon_MeshPaint_Save_16x", Icon16x16 ) );
-		Set( "MeshPaint.CommitChanges", new IMAGE_BRUSH( "/Icons/assign_right_16x", Icon16x16 ) );
+		Set( "MeshPaint.FixColors", new IMAGE_BRUSH( "/Icons/icon_tab_Toolbars_16x", Icon16x16 ) );
 		Set( "MeshPaint.Swap", new IMAGE_BRUSH( "/Icons/icon_MeshPaint_Swap_16x", Icon16x16 ) );
 	}
 
@@ -5209,6 +5216,7 @@ void FSlateEditorStyle::FStyle::SetupPersonaStyle()
 		Set("Persona.TogglePreviewAsset.Small", new IMAGE_BRUSH(TEXT("Icons/icon_Persona_PreviewAsset_40x"), Icon20x20));
 		Set("Persona.ToggleReferencePose", new IMAGE_BRUSH(TEXT("Icons/icon_Persona_ReferencePose_40x"), Icon40x40));
 		Set("Persona.ToggleReferencePose.Small", new IMAGE_BRUSH(TEXT("Icons/icon_Persona_ReferencePose_40x"), Icon20x20));
+		Set("Persona.SavePreviewMeshCollection", new IMAGE_BRUSH(TEXT("Icons/Save_16x"), Icon16x16));
 
 		// persona extras
 		Set("Persona.ConvertAnimationGraph", new IMAGE_BRUSH("Old/Graph/ConvertIcon", Icon40x40));
@@ -5297,6 +5305,9 @@ void FSlateEditorStyle::FStyle::SetupPersonaStyle()
 		Set("SkeletalMeshEditor.ReimportMesh.Small", new IMAGE_BRUSH(TEXT("Icons/icon_Persona_ReimportMesh_40x"), Icon20x20));
 		Set("SkeletalMeshEditor.ImportLODs", new IMAGE_BRUSH(TEXT("Icons/icon_Persona_ImportLODs_40x"), Icon40x40));
 		Set("SkeletalMeshEditor.ImportLODs.Small", new IMAGE_BRUSH(TEXT("Icons/icon_Persona_ImportLODs_40x"), Icon20x20));
+
+		Set("SkeletalMeshEditor.MeshSectionSelection", new IMAGE_BRUSH(TEXT("Icons/icon_Persona_MeshSectionSelection_40x"), Icon40x40));
+		Set("SkeletalMeshEditor.MeshSectionSelection.Small", new IMAGE_BRUSH(TEXT("Icons/icon_Persona_MeshSectionSelection_40x"), Icon20x20));
 	}
 
 	// Kismet 2
@@ -5447,7 +5458,7 @@ void FSlateEditorStyle::FStyle::SetupPersonaStyle()
 
 		// blend space
 		Set("BlendSpaceEditor.ToggleTriangulation", new IMAGE_BRUSH(TEXT("Persona/BlendSpace/triangulation_16"), Icon16x16));
-		Set("BlendSpaceEditor.ToggleTriangulation", new IMAGE_BRUSH(TEXT("Persona/BlendSpace/triangulation_16"), Icon16x16));
+		Set("BlendSpaceEditor.ToggleLabels", new IMAGE_BRUSH(TEXT("Persona/BlendSpace/label_16"), Icon16x16));
 
 		const FButtonStyle BlueprintContextTargetsButtonStyle = FButtonStyle()
 			.SetNormal(IMAGE_BRUSH("Common/TreeArrow_Collapsed_Hovered", Icon10x10, FLinearColor(0.2f, 0.2f, 0.2f, 1.f)))

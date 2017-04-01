@@ -1594,6 +1594,9 @@ protected:
 	/** @note Movement update functions should only be called through StartNewPhysics()*/
 	virtual void PhysCustom(float deltaTime, int32 Iterations);
 
+	/* Allow custom handling when character hits a wall while swimming. */
+	virtual void HandleSwimmingWallHit(const FHitResult& Hit, float DeltaTime);
+
 	/**
 	 * Compute a vector of movement, given a delta and a hit result of the surface we are on.
 	 *
@@ -2004,6 +2007,9 @@ protected:
 
 	/** Return true if it is OK to delay sending this player movement to the server, in order to conserve bandwidth. */
 	virtual bool CanDelaySendingMove(const FSavedMovePtr& NewMove);
+
+	/** Determine minimum delay between sending client updates to the server. If updates occur more frequently this than this time, moves may be combined delayed. */
+	virtual float GetClientNetSendDeltaTime(const APlayerController* PC, const FNetworkPredictionData_Client_Character* ClientData, const FSavedMovePtr& NewMove) const;
 
 	/** Ticks the characters pose and accumulates root motion */
 	void TickCharacterPose(float DeltaTime);

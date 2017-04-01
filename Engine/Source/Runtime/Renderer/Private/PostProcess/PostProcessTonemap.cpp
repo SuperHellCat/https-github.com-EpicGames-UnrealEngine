@@ -12,6 +12,7 @@
 #include "PostProcess/PostProcessCombineLUTs.h"
 #include "PostProcess/PostProcessMobile.h"
 #include "ClearQuad.h"
+#include "PipelineStateCache.h"
 
 static TAutoConsoleVariable<float> CVarTonemapperSharpen(
 	TEXT("r.Tonemapper.Sharpen"),
@@ -984,7 +985,7 @@ public:
 
 		const FPixelShaderRHIParamRef ShaderRHI = GetPixelShader();
 		
-		FGlobalShader::SetParameters(Context.RHICmdList, ShaderRHI, Context.View);
+		FGlobalShader::SetParameters<FViewUniformShaderParameters>(Context.RHICmdList, ShaderRHI, Context.View.ViewUniformBuffer);
 
 		{
 			// filtering can cost performance so we use point where possible, we don't want anisotropic sampling
@@ -1201,15 +1202,24 @@ namespace PostProcessTonemapUtil
 	template <uint32 ConfigIndex, bool bDoEyeAdaptation>
 	static inline void SetShaderTempl(const FRenderingCompositePassContext& Context)
 	{
+		FGraphicsPipelineStateInitializer GraphicsPSOInit;
+		Context.RHICmdList.ApplyCachedRenderTargets(GraphicsPSOInit);
+		GraphicsPSOInit.BlendState = TStaticBlendState<>::GetRHI();
+		GraphicsPSOInit.RasterizerState = TStaticRasterizerState<>::GetRHI();
+		GraphicsPSOInit.DepthStencilState = TStaticDepthStencilState<false, CF_Always>::GetRHI();
+
 		typedef TPostProcessTonemapVS<bDoEyeAdaptation> VertexShaderType;
 		typedef FPostProcessTonemapPS<ConfigIndex>      PixelShaderType;
 
 		TShaderMapRef<PixelShaderType>  PixelShader(Context.GetShaderMap());
 		TShaderMapRef<VertexShaderType> VertexShader(Context.GetShaderMap());
 
-		static FGlobalBoundShaderState BoundShaderState;
+		GraphicsPSOInit.BoundShaderState.VertexDeclarationRHI = GFilterVertexDeclaration.VertexDeclarationRHI;
+		GraphicsPSOInit.BoundShaderState.VertexShaderRHI = GETSAFERHISHADER_VERTEX(*VertexShader);
+		GraphicsPSOInit.BoundShaderState.PixelShaderRHI = GETSAFERHISHADER_PIXEL(*PixelShader);
+		GraphicsPSOInit.PrimitiveType = PT_TriangleList;
 
-		SetGlobalBoundShaderState(Context.RHICmdList, Context.GetFeatureLevel(), BoundShaderState, GFilterVertexDeclaration.VertexDeclarationRHI, *VertexShader, *PixelShader);
+		SetGraphicsPipelineState(Context.RHICmdList, GraphicsPSOInit);
 
 		VertexShader->SetVS(Context);
 		PixelShader->SetPS(Context);
@@ -1273,7 +1283,7 @@ void FRCPassPostProcessTonemap::Process(FRenderingCompositePassContext& Context)
 		if (Context.HasHmdMesh() && View.StereoPass == eSSP_LEFT_EYE)
 		{
 			// needed when using an hmd mesh instead of a full screen quad because we don't touch all of the pixels in the render target
-			Context.RHICmdList.ClearColorTexture(DestRenderTarget.TargetableTexture, FLinearColor::Black);
+			DrawClearQuad(Context.RHICmdList, GMaxRHIFeatureLevel, FLinearColor::Black);
 		}
 		else if (ViewFamily.RenderTarget->GetRenderTargetTexture() != DestRenderTarget.TargetableTexture)
 		{
@@ -1283,11 +1293,6 @@ void FRCPassPostProcessTonemap::Process(FRenderingCompositePassContext& Context)
 	}
 
 	Context.SetViewportAndCallRHI(DestRect, 0.0f, 1.0f );
-
-	// set the state
-	Context.RHICmdList.SetBlendState(TStaticBlendState<>::GetRHI());
-	Context.RHICmdList.SetRasterizerState(TStaticRasterizerState<>::GetRHI());
-	Context.RHICmdList.SetDepthStencilState(TStaticDepthStencilState<false, CF_Always>::GetRHI());
 
 	const int32 ConfigOverride = CVarTonemapperOverride->GetInt();
 	const uint32 FinalConfigIndex = ConfigOverride == -1 ? ConfigIndexPC : (int32)ConfigOverride;
@@ -1441,6 +1446,7 @@ public:
 
 	FShaderParameter OverlayColor;
 	FShaderParameter FringeIntensity;
+	FShaderParameter SRGBAwareTargetParam;
 
 	/** Initialization constructor. */
 	FPostProcessTonemapPS_ES2(const ShaderMetaType::CompiledShaderInitializerType& Initializer)
@@ -1465,6 +1471,9 @@ public:
 
 		OverlayColor.Bind(Initializer.ParameterMap, TEXT("OverlayColor"));
 		FringeIntensity.Bind(Initializer.ParameterMap, TEXT("FringeIntensity"));
+
+		
+		SRGBAwareTargetParam.Bind(Initializer.ParameterMap, TEXT("SRGBAwareTarget"));
 	}
 	
 	// FShader interface.
@@ -1475,19 +1484,20 @@ public:
 			<< TexScale << GrainScaleBiasJitter << TonemapperParams
 			<< ColorMatrixR_ColorCurveCd1 << ColorMatrixG_ColorCurveCd3Cm3 << ColorMatrixB_ColorCurveCm2 << ColorCurve_Cm0Cd0_Cd2_Ch0Cm1_Ch3 << ColorCurve_Ch1_Ch2 << ColorShadow_Luma << ColorShadow_Tint1 << ColorShadow_Tint2
 			<< OverlayColor
-			<< FringeIntensity;
+			<< FringeIntensity
+			<< SRGBAwareTargetParam;
 
 		return bShaderHasOutdatedParameters;
 	}
 
-	void SetPS(const FRenderingCompositePassContext& Context)
+	void SetPS(const FRenderingCompositePassContext& Context, bool bSRGBAwareTarget)
 	{
 		const FPostProcessSettings& Settings = Context.View.FinalPostProcessSettings;
 		const FSceneViewFamily& ViewFamily = *(Context.View.Family);
 
 		const FPixelShaderRHIParamRef ShaderRHI = GetPixelShader();
 		
-		FGlobalShader::SetParameters(Context.RHICmdList, ShaderRHI, Context.View);
+		FGlobalShader::SetParameters<FViewUniformShaderParameters>(Context.RHICmdList, ShaderRHI, Context.View.ViewUniformBuffer);
 
 		const uint32 ConfigBitmask = TonemapperConfBitmaskMobile[ConfigIndex];
 
@@ -1556,6 +1566,8 @@ public:
 			SetShaderValue(Context.RHICmdList, ShaderRHI, ColorShadow_Tint1, Constants[6]);
 			SetShaderValue(Context.RHICmdList, ShaderRHI, ColorShadow_Tint2, Constants[7]);
 		}
+
+		SetShaderValue(Context.RHICmdList, ShaderRHI, SRGBAwareTargetParam, bSRGBAwareTarget ? 1.0f : 0.0f );
 	}
 	
 	static const TCHAR* GetSourceFilename()
@@ -1611,7 +1623,7 @@ public:
 	void SetVS(const FRenderingCompositePassContext& Context)
 	{
 		const FVertexShaderRHIParamRef ShaderRHI = GetVertexShader();
-		FGlobalShader::SetParameters(Context.RHICmdList, ShaderRHI, Context.View);
+		FGlobalShader::SetParameters<FViewUniformShaderParameters>(Context.RHICmdList, ShaderRHI, Context.View.ViewUniformBuffer);
 
 		PostprocessParameter.SetVS(ShaderRHI, Context, TStaticSamplerState<SF_Bilinear,AM_Clamp,AM_Clamp,AM_Clamp>::GetRHI());
 
@@ -1647,27 +1659,36 @@ namespace PostProcessTonemap_ES2Util
 {
 	// Template implementation supports unique static BoundShaderState for each permutation of Pixel Shaders 
 	template <uint32 ConfigIndex>
-	static inline void SetShaderTemplES2(const FRenderingCompositePassContext& Context, bool bUsedFramebufferFetch)
+	static inline void SetShaderTemplES2(const FRenderingCompositePassContext& Context, bool bUsedFramebufferFetch, bool bSRGBAwareTarget)
 	{
+		FGraphicsPipelineStateInitializer GraphicsPSOInit;
+		Context.RHICmdList.ApplyCachedRenderTargets(GraphicsPSOInit);
+		GraphicsPSOInit.BlendState = TStaticBlendState<>::GetRHI();
+		GraphicsPSOInit.RasterizerState = TStaticRasterizerState<>::GetRHI();
+		GraphicsPSOInit.DepthStencilState = TStaticDepthStencilState<false, CF_Always>::GetRHI();
+
 		TShaderMapRef<FPostProcessTonemapVS_ES2> VertexShader(Context.GetShaderMap());
 		TShaderMapRef<FPostProcessTonemapPS_ES2<ConfigIndex> > PixelShader(Context.GetShaderMap());
 
 		VertexShader->bUsedFramebufferFetch = bUsedFramebufferFetch;
 
-		static FGlobalBoundShaderState BoundShaderState;
+		GraphicsPSOInit.BoundShaderState.VertexDeclarationRHI = GFilterVertexDeclaration.VertexDeclarationRHI;
+		GraphicsPSOInit.BoundShaderState.VertexShaderRHI = GETSAFERHISHADER_VERTEX(*VertexShader);
+		GraphicsPSOInit.BoundShaderState.PixelShaderRHI = GETSAFERHISHADER_PIXEL(*PixelShader);
+		GraphicsPSOInit.PrimitiveType = PT_TriangleList;
 
-
-		SetGlobalBoundShaderState(Context.RHICmdList, Context.GetFeatureLevel(), BoundShaderState, GFilterVertexDeclaration.VertexDeclarationRHI, *VertexShader, *PixelShader);
+		SetGraphicsPipelineState(Context.RHICmdList, GraphicsPSOInit);
 
 		VertexShader->SetVS(Context);
-		PixelShader->SetPS(Context);
+		PixelShader->SetPS(Context, bSRGBAwareTarget);
 	}
 }
 
-FRCPassPostProcessTonemapES2::FRCPassPostProcessTonemapES2(const FViewInfo& InView, bool bInUsedFramebufferFetch)
+FRCPassPostProcessTonemapES2::FRCPassPostProcessTonemapES2(const FViewInfo& InView, bool bInUsedFramebufferFetch, bool bInSRGBAwareTarget)
 	: bDoScreenPercentageInTonemapper(false)
 	, View(InView)
 	, bUsedFramebufferFetch(bInUsedFramebufferFetch)
+	, bSRGBAwareTarget(bInSRGBAwareTarget)
 {
 	uint32 ConfigBitmask = TonemapperGenerateBitmaskMobile(&View, false);
 	ConfigIndexMobile = TonemapperFindLeastExpensive(TonemapperConfBitmaskMobile, sizeof(TonemapperConfBitmaskMobile)/4, TonemapperCostTab, ConfigBitmask);
@@ -1715,62 +1736,57 @@ void FRCPassPostProcessTonemapES2::Process(FRenderingCompositePassContext& Conte
 		// Full clear to avoid restore
 		if ((View.StereoPass == eSSP_FULL && bFirstView) || View.StereoPass == eSSP_LEFT_EYE)
 		{
-			Context.RHICmdList.ClearColorTexture(DestRenderTarget.TargetableTexture, FLinearColor::Black);
+			DrawClearQuad(Context.RHICmdList, GMaxRHIFeatureLevel, FLinearColor::Black);
 		}
 	}
 
 	Context.SetViewportAndCallRHI(DestRect);
 
-	// set the state
-	Context.RHICmdList.SetBlendState(TStaticBlendState<>::GetRHI());
-	Context.RHICmdList.SetRasterizerState(TStaticRasterizerState<>::GetRHI());
-	Context.RHICmdList.SetDepthStencilState(TStaticDepthStencilState<false, CF_Always>::GetRHI());
-
 	const int32 ConfigOverride = CVarTonemapperOverride->GetInt();
 	const uint32 FinalConfigIndex = ConfigOverride == -1 ? ConfigIndexMobile : (int32)ConfigOverride;
-
+	
 	switch(FinalConfigIndex)
 	{
 		using namespace PostProcessTonemap_ES2Util;
-		case 0:	SetShaderTemplES2<0>(Context, bUsedFramebufferFetch); break;
-		case 1:	SetShaderTemplES2<1>(Context, bUsedFramebufferFetch); break;
-		case 2:	SetShaderTemplES2<2>(Context, bUsedFramebufferFetch); break;
-		case 3:	SetShaderTemplES2<3>(Context, bUsedFramebufferFetch); break;
-		case 4:	SetShaderTemplES2<4>(Context, bUsedFramebufferFetch); break;
-		case 5:	SetShaderTemplES2<5>(Context, bUsedFramebufferFetch); break;
-		case 6:	SetShaderTemplES2<6>(Context, bUsedFramebufferFetch); break;
-		case 7:	SetShaderTemplES2<7>(Context, bUsedFramebufferFetch); break;
-		case 8:	SetShaderTemplES2<8>(Context, bUsedFramebufferFetch); break;
-		case 9:	SetShaderTemplES2<9>(Context, bUsedFramebufferFetch); break;
-		case 10: SetShaderTemplES2<10>(Context, bUsedFramebufferFetch); break;
-		case 11: SetShaderTemplES2<11>(Context, bUsedFramebufferFetch); break;
-		case 12: SetShaderTemplES2<12>(Context, bUsedFramebufferFetch); break;
-		case 13: SetShaderTemplES2<13>(Context, bUsedFramebufferFetch); break;
-		case 14: SetShaderTemplES2<14>(Context, bUsedFramebufferFetch); break;
-		case 15: SetShaderTemplES2<15>(Context, bUsedFramebufferFetch); break;
-		case 16: SetShaderTemplES2<16>(Context, bUsedFramebufferFetch); break;
-		case 17: SetShaderTemplES2<17>(Context, bUsedFramebufferFetch); break;
-		case 18: SetShaderTemplES2<18>(Context, bUsedFramebufferFetch); break;
-		case 19: SetShaderTemplES2<19>(Context, bUsedFramebufferFetch); break;
-		case 20: SetShaderTemplES2<20>(Context, bUsedFramebufferFetch); break;
-		case 21: SetShaderTemplES2<21>(Context, bUsedFramebufferFetch); break;
-		case 22: SetShaderTemplES2<22>(Context, bUsedFramebufferFetch); break;
-		case 23: SetShaderTemplES2<23>(Context, bUsedFramebufferFetch); break;
-		case 24: SetShaderTemplES2<24>(Context, bUsedFramebufferFetch); break;
-		case 25: SetShaderTemplES2<25>(Context, bUsedFramebufferFetch); break;
-		case 26: SetShaderTemplES2<26>(Context, bUsedFramebufferFetch); break;
-		case 27: SetShaderTemplES2<27>(Context, bUsedFramebufferFetch); break;
-		case 28: SetShaderTemplES2<28>(Context, bUsedFramebufferFetch); break;
-		case 29: SetShaderTemplES2<29>(Context, bUsedFramebufferFetch); break;
-		case 30: SetShaderTemplES2<30>(Context, bUsedFramebufferFetch); break;
-		case 31: SetShaderTemplES2<31>(Context, bUsedFramebufferFetch); break;
-		case 32: SetShaderTemplES2<32>(Context, bUsedFramebufferFetch); break;
-		case 33: SetShaderTemplES2<33>(Context, bUsedFramebufferFetch); break;
-		case 34: SetShaderTemplES2<34>(Context, bUsedFramebufferFetch); break;
-		case 35: SetShaderTemplES2<35>(Context, bUsedFramebufferFetch); break;
-		case 36: SetShaderTemplES2<36>(Context, bUsedFramebufferFetch); break;
-		case 37: SetShaderTemplES2<37>(Context, bUsedFramebufferFetch); break;
-		case 38: SetShaderTemplES2<38>(Context, bUsedFramebufferFetch); break;
+		case 0:	SetShaderTemplES2<0>(Context, bUsedFramebufferFetch, bSRGBAwareTarget); break;
+		case 1:	SetShaderTemplES2<1>(Context, bUsedFramebufferFetch, bSRGBAwareTarget); break;
+		case 2:	SetShaderTemplES2<2>(Context, bUsedFramebufferFetch, bSRGBAwareTarget); break;
+		case 3:	SetShaderTemplES2<3>(Context, bUsedFramebufferFetch, bSRGBAwareTarget); break;
+		case 4:	SetShaderTemplES2<4>(Context, bUsedFramebufferFetch, bSRGBAwareTarget); break;
+		case 5:	SetShaderTemplES2<5>(Context, bUsedFramebufferFetch, bSRGBAwareTarget); break;
+		case 6:	SetShaderTemplES2<6>(Context, bUsedFramebufferFetch, bSRGBAwareTarget); break;
+		case 7:	SetShaderTemplES2<7>(Context, bUsedFramebufferFetch, bSRGBAwareTarget); break;
+		case 8:	SetShaderTemplES2<8>(Context, bUsedFramebufferFetch, bSRGBAwareTarget); break;
+		case 9:	SetShaderTemplES2<9>(Context, bUsedFramebufferFetch, bSRGBAwareTarget); break;
+		case 10: SetShaderTemplES2<10>(Context, bUsedFramebufferFetch, bSRGBAwareTarget); break;
+		case 11: SetShaderTemplES2<11>(Context, bUsedFramebufferFetch, bSRGBAwareTarget); break;
+		case 12: SetShaderTemplES2<12>(Context, bUsedFramebufferFetch, bSRGBAwareTarget); break;
+		case 13: SetShaderTemplES2<13>(Context, bUsedFramebufferFetch, bSRGBAwareTarget); break;
+		case 14: SetShaderTemplES2<14>(Context, bUsedFramebufferFetch, bSRGBAwareTarget); break;
+		case 15: SetShaderTemplES2<15>(Context, bUsedFramebufferFetch, bSRGBAwareTarget); break;
+		case 16: SetShaderTemplES2<16>(Context, bUsedFramebufferFetch, bSRGBAwareTarget); break;
+		case 17: SetShaderTemplES2<17>(Context, bUsedFramebufferFetch, bSRGBAwareTarget); break;
+		case 18: SetShaderTemplES2<18>(Context, bUsedFramebufferFetch, bSRGBAwareTarget); break;
+		case 19: SetShaderTemplES2<19>(Context, bUsedFramebufferFetch, bSRGBAwareTarget); break;
+		case 20: SetShaderTemplES2<20>(Context, bUsedFramebufferFetch, bSRGBAwareTarget); break;
+		case 21: SetShaderTemplES2<21>(Context, bUsedFramebufferFetch, bSRGBAwareTarget); break;
+		case 22: SetShaderTemplES2<22>(Context, bUsedFramebufferFetch, bSRGBAwareTarget); break;
+		case 23: SetShaderTemplES2<23>(Context, bUsedFramebufferFetch, bSRGBAwareTarget); break;
+		case 24: SetShaderTemplES2<24>(Context, bUsedFramebufferFetch, bSRGBAwareTarget); break;
+		case 25: SetShaderTemplES2<25>(Context, bUsedFramebufferFetch, bSRGBAwareTarget); break;
+		case 26: SetShaderTemplES2<26>(Context, bUsedFramebufferFetch, bSRGBAwareTarget); break;
+		case 27: SetShaderTemplES2<27>(Context, bUsedFramebufferFetch, bSRGBAwareTarget); break;
+		case 28: SetShaderTemplES2<28>(Context, bUsedFramebufferFetch, bSRGBAwareTarget); break;
+		case 29: SetShaderTemplES2<29>(Context, bUsedFramebufferFetch, bSRGBAwareTarget); break;
+		case 30: SetShaderTemplES2<30>(Context, bUsedFramebufferFetch, bSRGBAwareTarget); break;
+		case 31: SetShaderTemplES2<31>(Context, bUsedFramebufferFetch, bSRGBAwareTarget); break;
+		case 32: SetShaderTemplES2<32>(Context, bUsedFramebufferFetch, bSRGBAwareTarget); break;
+		case 33: SetShaderTemplES2<33>(Context, bUsedFramebufferFetch, bSRGBAwareTarget); break;
+		case 34: SetShaderTemplES2<34>(Context, bUsedFramebufferFetch, bSRGBAwareTarget); break;
+		case 35: SetShaderTemplES2<35>(Context, bUsedFramebufferFetch, bSRGBAwareTarget); break;
+		case 36: SetShaderTemplES2<36>(Context, bUsedFramebufferFetch, bSRGBAwareTarget); break;
+		case 37: SetShaderTemplES2<37>(Context, bUsedFramebufferFetch, bSRGBAwareTarget); break;
+		case 38: SetShaderTemplES2<38>(Context, bUsedFramebufferFetch, bSRGBAwareTarget); break;
 		default:
 			check(0);
 	}
@@ -1799,7 +1815,7 @@ FPooledRenderTargetDesc FRCPassPostProcessTonemapES2::ComputeOutputDesc(EPassOut
 	Ret.Reset();
 	Ret.Format = PF_B8G8R8A8;
 	Ret.DebugName = TEXT("Tonemap");
-	Ret.ClearValue = FClearValueBinding(FLinearColor(0, 0, 0, 0));
+	Ret.ClearValue = FClearValueBinding(FLinearColor::Black);
 	if (bDoScreenPercentageInTonemapper)
 	{
 		Ret.Extent = View.UnscaledViewRect.Max;

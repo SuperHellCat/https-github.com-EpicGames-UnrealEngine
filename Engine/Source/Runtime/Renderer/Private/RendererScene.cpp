@@ -588,6 +588,7 @@ FScene::FScene(UWorld* InWorld, bool bInRequiresHitProxies, bool bInIsEditorScen
 ,	DynamicIndirectShadowsSelfShadowingIntensity(FMath::Clamp(InWorld->GetWorldSettings()->DynamicIndirectShadowsSelfShadowingIntensity, 0.0f, 1.0f))
 ,	NumVisibleLights_GameThread(0)
 ,	NumEnabledSkylights_GameThread(0)
+,	SceneFrameNumber(0)
 {
 	FMemory::Memzero(MobileDirectionalLights);
 
@@ -1200,15 +1201,17 @@ void FScene::SetSkyLight(FSkyLightSceneProxy* LightProxy)
 	{
 		check(!Scene->SkyLightStack.Contains(LightProxy));
 		Scene->SkyLightStack.Push(LightProxy);
-		const bool bHadSkylight = Scene->SkyLight != NULL;
+		const bool bOriginalHadSkylight = Scene->ShouldRenderSkylightInBasePass(BLEND_Opaque);
 
 		// Use the most recently enabled skylight
 		Scene->SkyLight = LightProxy;
 
-		if (!bHadSkylight)
+		const bool bNewHasSkylight = Scene->ShouldRenderSkylightInBasePass(BLEND_Opaque);
+
+		if (bOriginalHadSkylight != bNewHasSkylight)
 		{
-		// Mark the scene as needing static draw lists to be recreated if needed
-		// The base pass chooses shaders based on whether there's a skylight in the scene, and that is cached in static draw lists
+			// Mark the scene as needing static draw lists to be recreated if needed
+			// The base pass chooses shaders based on whether there's a skylight in the scene, and that is cached in static draw lists
 			Scene->bScenesPrimitivesNeedStaticMeshElementUpdate = true;
 		}
 	});
@@ -1224,7 +1227,7 @@ void FScene::DisableSkyLight(FSkyLightSceneProxy* LightProxy)
 		FScene*,Scene,this,
 		FSkyLightSceneProxy*,LightProxy,LightProxy,
 	{
-		const bool bHadSkylight = Scene->SkyLight != NULL;
+		const bool bOriginalHadSkylight = Scene->ShouldRenderSkylightInBasePass(BLEND_Opaque);
 
 		Scene->SkyLightStack.RemoveSingle(LightProxy);
 
@@ -1238,8 +1241,10 @@ void FScene::DisableSkyLight(FSkyLightSceneProxy* LightProxy)
 			Scene->SkyLight = NULL;
 		}
 
+		const bool bNewHasSkylight = Scene->ShouldRenderSkylightInBasePass(BLEND_Opaque);
+
 		// Update the scene if we switched skylight enabled states
-		if ((Scene->SkyLight != NULL) != bHadSkylight)
+		if (bOriginalHadSkylight != bNewHasSkylight)
 		{
 			Scene->bScenesPrimitivesNeedStaticMeshElementUpdate = true;
 		}
@@ -1670,11 +1675,13 @@ void FScene::UpdateLightColorAndBrightness(ULightComponent* Light)
 		{
 			FLinearColor NewColor;
 			float NewIndirectLightingScale;
+			float NewVolumetricScatteringIntensity;
 		};
 
 		FUpdateLightColorParameters NewParameters;
 		NewParameters.NewColor = FLinearColor(Light->LightColor) * Light->ComputeLightBrightness();
 		NewParameters.NewIndirectLightingScale = Light->IndirectLightingIntensity;
+		NewParameters.NewVolumetricScatteringIntensity = Light->VolumetricScatteringIntensity;
 
 		if( Light->bUseTemperature )
 		{
@@ -1699,6 +1706,7 @@ void FScene::UpdateLightColorAndBrightness(ULightComponent* Light)
 
 					LightSceneInfo->Proxy->SetColor(Parameters.NewColor);
 					LightSceneInfo->Proxy->IndirectLightingScale = Parameters.NewIndirectLightingScale;
+					LightSceneInfo->Proxy->VolumetricScatteringIntensity = Parameters.NewVolumetricScatteringIntensity;
 
 					// Also update the LightSceneInfoCompact
 					if( LightSceneInfo->Id != INDEX_NONE )

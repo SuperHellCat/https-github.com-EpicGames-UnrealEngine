@@ -2857,9 +2857,14 @@ static bool GenerateDestIniFile(FConfigFile& DestConfigFile, const FString& Dest
 		}
 	}
 	
-	// Regenerate the file.
-	if( bForceRegenerate )
+	if (DestConfigFile.Num() == 0 && DestConfigFile.SourceConfigFile->Num() == 0)
 	{
+		// If both are empty, don't save
+		return false;
+	}
+	else if( bForceRegenerate )
+	{
+		// Regenerate the file.
 		bResult = LoadIniFileHierarchy(SourceIniHierarchy, DestConfigFile, bUseHierarchyCache);
 		DestConfigFile.SourceConfigFile = new FConfigFile( DestConfigFile );
 
@@ -3390,6 +3395,7 @@ private:
 				{
 					UpdatedSection += FConfigFile::GenerateExportedPropertyLine(PropertyName, PropertyValue);
 					bWrotePropertyOnPass = true;
+					break;
 				}
 				else
 				{
@@ -3506,14 +3512,38 @@ bool FConfigFile::UpdateSinglePropertyInSection(const TCHAR* DiskFilename, const
 	// Result of whether the file has been updated on disk.
 	bool bSuccessfullyUpdatedFile = false;
 
-	FString PropertyValue;
+	
 	if (const FConfigSection* LocalSection = this->Find(SectionName))
 	{
-		if (const FConfigValue* ConfigValue = LocalSection->Find(PropertyName))
+		TArray<FConfigValue> ConfigValues;		
+		LocalSection->MultiFind(PropertyName, ConfigValues);
+
+		if (ConfigValues.Num())
 		{
-			PropertyValue = ConfigValue->GetSavedValue();
+			FString PropertyValue;
+			if (ConfigValues.Num() > 1)
+			{
+				for (const FConfigValue& ConfigValue : ConfigValues)
+				{
+					if (!PropertyValue.IsEmpty())
+					{
+						PropertyValue += "\n";
+						PropertyValue += PropertyName;
+						PropertyValue += "=";
+					}
+
+					PropertyValue += ConfigValue.GetSavedValue();
+				}
+
+				PropertyValue += ")";
+			}
+			else
+			{
+				PropertyValue = ConfigValues.Top().GetSavedValue();
+			}
+
 			FSinglePropertyConfigHelper SinglePropertyConfigHelper(DiskFilename, SectionName, PropertyName, PropertyValue);
-			bSuccessfullyUpdatedFile = SinglePropertyConfigHelper.UpdateConfigFile();
+			bSuccessfullyUpdatedFile |= SinglePropertyConfigHelper.UpdateConfigFile();
 		}
 	}
 

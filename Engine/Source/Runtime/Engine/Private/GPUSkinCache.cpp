@@ -12,6 +12,7 @@
 #include "GlobalShader.h"
 #include "SkeletalRenderGPUSkin.h"
 #include "ShaderParameterUtils.h"
+#include "ClearQuad.h"
 
 DEFINE_STAT(STAT_GPUSkinCache_TotalNumChunks);
 DEFINE_STAT(STAT_GPUSkinCache_TotalNumVertices);
@@ -104,13 +105,23 @@ static TAutoConsoleVariable<float> CVarGPUSkinCacheDebug(
 	1.0f,
 	TEXT("A constant passed to the SkinCache shader, useful for debugging"),
 	ECVF_RenderThreadSafe
-	);
+);
 
 
 bool IsGPUSkinCacheAvailable()
 {
 	return GEnableGPUSkinCacheShaders != 0 || GForceRecomputeTangents != 0;
 }
+
+// max vertex count we support once the r.SkinCache.RecomputeTangents feature is used (GPU memory in bytes = n * sizeof(int) * IntermediateAccumBufferNumInts)
+// 4*1024 KB is the conservative size needed for Senua in CharDemo with NinjaTheory.
+TAutoConsoleVariable<int32> CVarGPUSkinCacheIntermediateAccumBufferSizeInKB(
+	TEXT("r.SkinCache.AccumulationBufferSizeInKB"),
+	4 * 1024,
+	TEXT("Maximum memory size of the output buffer for the computed vertices of the skin cache\n"),
+	ECVF_ReadOnly | ECVF_RenderThreadSafe
+);
+
 
 // We don't have it always enabled as it's not clear if this has a performance cost
 // Call on render thread only!
@@ -126,6 +137,14 @@ ENGINE_API bool DoRecomputeSkinTangentsOnGPU_RT()
 	// currently only implemented and tested on Window SM5 (needs Compute, Atomics, SRV for index buffers, UAV for VertexBuffers)
 	return (GMaxRHIShaderPlatform == SP_PCD3D_SM5 || GMaxRHIShaderPlatform == SP_METAL_SM5) && GEnableGPUSkinCacheShaders != 0 && ((GEnableGPUSkinCache && CVarGPUSkinCacheRecomputeTangents.GetValueOnRenderThread() != 0) || GForceRecomputeTangents != 0);
 }
+
+
+static inline uint32 ComputeRecomputeTangentMaxVertexCount()
+{
+	uint32 IntermediateAccumBufferSizeInB = CVarGPUSkinCacheIntermediateAccumBufferSizeInKB.GetValueOnAnyThread() * 1024;
+	return IntermediateAccumBufferSizeInB / (sizeof(int32) * FGPUSkinCache::IntermediateAccumBufferNumInts);
+}
+
 
 TGlobalResource<FGPUSkinCache> GGPUSkinCache;
 
@@ -314,7 +333,7 @@ public:
 
 FGPUSkinCache::FGPUSkinCache()
 	: bInitialized(false)
-	, SkinCacheFrameNumber(0)
+	, InternalUpdateCount(0)
 	, CacheMaxVectorCount(0)
 	, CacheCurrentFloatOffset(0)
 	, CachedChunksThisFrameCount(0)
@@ -365,8 +384,7 @@ void FGPUSkinCache::Initialize(FRHICommandListImmediate& RHICmdList)
 		UE_LOG(LogSkinCache, Log, TEXT("  RecomputeTangents: %.1f MB"), FMath::DivideAndRoundUp(MemInB, (uint32)1024) / 1024.0f);
 
 		// We clear once in the beginning and then each time in the PerVertexPass (this saves the clear or another Dispatch)
-		uint32 Value[4] = { 0, 0, 0, 0 };
-		RHICmdList.ClearUAV(SkinTangentIntermediate.UAV, Value);
+		RHICmdList.ClearTinyUAV(SkinTangentIntermediate.UAV, { 0, 0, 0, 0 });
 	}	
 
 	CachedElements.Reserve(MaxCachedElements);
@@ -396,7 +414,7 @@ int32 FGPUSkinCache::StartCacheMesh(FRHICommandListImmediate& RHICmdList, uint32
 	FGPUSkinPassthroughVertexFactory* TargetVertexFactory, const FSkelMeshSection& BatchElement, FSkeletalMeshObjectGPUSkin* Skin,
 	const FMorphVertexBuffer* MorphVertexBuffer)
 {
-	if (CachedChunksThisFrameCount >= GMaxGPUSkinCacheElementsPerFrame && FrameNumber <= SkinCacheFrameNumber)
+	if (CachedChunksThisFrameCount >= GMaxGPUSkinCacheElementsPerFrame)
 	{
 		INC_DWORD_STAT(STAT_GPUSkinCache_SkippedForChunksPerFrame);
 		return -1;
@@ -405,13 +423,6 @@ int32 FGPUSkinCache::StartCacheMesh(FRHICommandListImmediate& RHICmdList, uint32
 	if (!bInitialized)
 	{
 		Initialize(RHICmdList);
-	}
-
-	if (FrameNumber > SkinCacheFrameNumber)	// Reset cache output if on a new frame
-	{
-		CacheCurrentFloatOffset = 0;
-		CachedChunksThisFrameCount = 0;
-		SkinCacheFrameNumber = FrameNumber;
 	}
 
 	FElementCacheStatusInfo::FSearchInfo SInfo;
@@ -444,7 +455,7 @@ int32 FGPUSkinCache::StartCacheMesh(FRHICommandListImmediate& RHICmdList, uint32
 		ECSInfo = CachedElements.FindByKey(SInfo);
 	}
 
-	int32 UAVIndex = SkinCacheFrameNumber % GPUSKINCACHE_FRAMES;
+	int32 UAVIndex = InternalUpdateCount % GPUSKINCACHE_FRAMES;
 	bool AlignStreamOffsetsFrames = false;
 	const bool bExtraBoneInfluences = VertexFactory->UsesExtraBoneInfluences();
 	bool bHasPreviousOffset = false;
@@ -462,7 +473,7 @@ int32 FGPUSkinCache::StartCacheMesh(FRHICommandListImmediate& RHICmdList, uint32
 		}
 
 		// Seems needed because we bump the frame number in each rendering but then 2 is not always enough
-		// TODO: Fix by using per scene/world frame number or store previsou frame number in scene/world
+		// TODO: Fix by using per scene/world frame number or store previous frame number in scene/world
 		AlignStreamOffsetsFrames = (FrameNumber - ECSInfo->FrameUpdated) > 2;
 
 		ECSInfo->PreviousFrameStreamOffset = ECSInfo->StreamOffset;
@@ -624,16 +635,28 @@ int32 FGPUSkinCache::StartCacheMesh(FRHICommandListImmediate& RHICmdList, uint32
 	return ECSInfo->Key;
 }
 
+void FGPUSkinCache::AdvanceFrameUpdate(FRHICommandList& RHICmdList)
+{
+	if (bInitialized)
+	{
+		++InternalUpdateCount;
+
+		// Reset cache output on a new frame
+		CacheCurrentFloatOffset = 0;
+		CachedChunksThisFrameCount = 0;
+	}
+}
+
 void FGPUSkinCache::TransitionToReadable(FRHICommandList& RHICmdList)
 {
-	int32 BufferIndex = SkinCacheFrameNumber % GPUSKINCACHE_FRAMES;
+	int32 BufferIndex = InternalUpdateCount % GPUSKINCACHE_FRAMES;
 	FUnorderedAccessViewRHIParamRef OutUAVs[] ={SkinCacheBuffer[BufferIndex].UAV};
 	RHICmdList.TransitionResources(EResourceTransitionAccess::EReadable, EResourceTransitionPipeline::EComputeToGfx, OutUAVs, ARRAY_COUNT(OutUAVs));
 }
 
 void FGPUSkinCache::TransitionToWriteable(FRHICommandList& RHICmdList)
 {
-	int32 BufferIndex = (SkinCacheFrameNumber + GPUSKINCACHE_FRAMES - 1) % GPUSKINCACHE_FRAMES;
+	int32 BufferIndex = InternalUpdateCount % GPUSKINCACHE_FRAMES;
 	FUnorderedAccessViewRHIParamRef OutUAVs[] = {SkinCacheBuffer[BufferIndex].UAV};
 	RHICmdList.TransitionResources(EResourceTransitionAccess::ERWNoBarrier, EResourceTransitionPipeline::EGfxToCompute, OutUAVs, ARRAY_COUNT(OutUAVs));
 }
@@ -655,9 +678,6 @@ void FGPUSkinCache::TransitionAllToWriteable(FRHICommandList& RHICmdList)
 
 bool FGPUSkinCache::InternalIsElementProcessed(uint32 FrameNumber, int32 Key) const
 {
-	// Happens, is this a problem?
-//	ensure(FrameNumber == SkinCacheFrameNumber);
-
 	if (Key >= 0 && Key < CachedElements.Num())
 	{
 		const FElementCacheStatusInfo& CacheInfo = CachedElements.GetData()[Key];
@@ -686,9 +706,11 @@ void FGPUSkinCache::InternalSetVertexStreamFromCache(FRHICommandList& RHICmdList
 		CacheInfo.NumVertices, CacheInfo.BatchElement->GetNumVertices(),
 		CacheInfo.BaseVertexIndex, BaseVertexIndex,
 		CacheInfo.BatchElement->HasClothingData());
-
-	ensure(!GSkinCacheSafety || FrameNumber == SkinCacheFrameNumber);
+	
 	ensure(!GSkinCacheSafety || CacheInfo.BatchElement->GetNumVertices() == CacheInfo.NumVertices);
+
+	const int32 UAVIndex = InternalUpdateCount % GPUSKINCACHE_FRAMES;
+	const int32 PrevUAVIndex = (InternalUpdateCount + GPUSKINCACHE_FRAMES - 1) % GPUSKINCACHE_FRAMES;
 
 	{
 		// Compensated offset since the StreamOffset is relative to the RWBuffer start, while the SetStreamSource one is relative to the BaseVertexIndex
@@ -700,14 +722,13 @@ void FGPUSkinCache::InternalSetVertexStreamFromCache(FRHICommandList& RHICmdList
 			return;
 		}
 
-		int32 UAVIndex = SkinCacheFrameNumber % GPUSKINCACHE_FRAMES;
 		RHICmdList.SetStreamSource(VertexFactory->GetStreamIndex(UAVIndex), SkinCacheBuffer[UAVIndex].Buffer, RWStrideInFloats * sizeof(float), CompensatedOffset);
 	}
 
 	FVertexShaderRHIParamRef ShaderRHI = Shader->GetVertexShader();
 	if (ShaderRHI && PreviousStreamBuffer.IsBound())
 	{
-		// Compensated offset since in the shader Shader we use VertexId which is offset by BaseVertexIndex
+		// Compensated offset since in the shader we use VertexId which is offset by BaseVertexIndex
 		int32 PreviousCompensatedOffset = ((int32)CacheInfo.PreviousFrameStreamOffset * sizeof(float)) - (CacheInfo.BatchElement->BaseVertexIndex * RWStrideInFloats * sizeof(float));
 		if (PreviousCompensatedOffset < 0)
 		{
@@ -716,10 +737,11 @@ void FGPUSkinCache::InternalSetVertexStreamFromCache(FRHICommandList& RHICmdList
 			return;
 		}
 
-		// Before this was assuming the previous frame is SkinCacheFrameNumber-1 but that is wrong when an object was just added (strong single frame motionblur artifact)
-		int32 PrevUAVIndex = (CacheInfo.PreviousFrameUpdated) % GPUSKINCACHE_FRAMES;
+		// Bind this frame's UAV if we don't have previous data available
+		int32 CachedUAVIndex = (CacheInfo.PreviousFrameUpdated == CacheInfo.FrameUpdated - 1) ? PrevUAVIndex : UAVIndex;
+
 		SetShaderValue(RHICmdList, ShaderRHI, PreviousStreamFloatOffset, PreviousCompensatedOffset / sizeof(float));
-		RHICmdList.SetShaderResourceViewParameter(ShaderRHI, PreviousStreamBuffer.GetBaseIndex(), SkinCacheBuffer[PrevUAVIndex].SRV);
+		RHICmdList.SetShaderResourceViewParameter(ShaderRHI, PreviousStreamBuffer.GetBaseIndex(), SkinCacheBuffer[CachedUAVIndex].SRV);
 	}
 }
 
@@ -852,7 +874,7 @@ public:
 
 		check(!GSkinCacheSafety || DispatchData.SkinCacheBuffer);
 
-//later		FGlobalShader::SetParameters(RHICmdList, ShaderRHI, View);
+//later		FGlobalShader::SetParameters<FViewUniformShaderParameters>(RHICmdList, ShaderRHI, View);
 
 		SetShaderValue(RHICmdList, ShaderRHI, NumTriangles, DispatchData.NumTriangles);
 
@@ -982,7 +1004,7 @@ public:
 		
 		check(!GSkinCacheSafety || DispatchData.SkinCacheBuffer);
 
-//later		FGlobalShader::SetParameters(RHICmdList, ShaderRHI, View);
+//later		FGlobalShader::SetParameters<FViewUniformShaderParameters>(RHICmdList, ShaderRHI, View);
 
 		SetShaderValue(RHICmdList, ShaderRHI, SkinCacheStart, DispatchData.SkinCacheStart);
 		SetShaderValue(RHICmdList, ShaderRHI, NumVertices, DispatchData.NumVertices);
@@ -1021,7 +1043,7 @@ void FGPUSkinCache::DispatchUpdateSkinTangents(const FDispatchData& DispatchData
 
 	//	if( IsValidRef(MorphVertexBuffer.VertexBufferRHI) )
 	{
-		// no need to clear the intermediate buffer becasue we create it cleared and clear it after each usage in the per vertex pass
+		// no need to clear the intermediate buffer because we create it cleared and clear it after each usage in the per vertex pass
 
 		FSkeletalMeshResource& SkeletalMeshResource = DispatchData.GPUSkin->GetSkeletalMeshResource();
 		int32 LODIndex = DispatchData.GPUSkin->GetLOD();

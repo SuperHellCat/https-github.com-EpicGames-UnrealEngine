@@ -136,7 +136,8 @@ public class UnrealEd : ModuleRules
                 "JsonUtilities",
 				"Landscape",
 				"HeadMountedDisplay",
-				"MeshPaint",
+                "MeshPaint",
+				"MeshPaintMode",
                 "Foliage",
                 "VectorVM",
 				"TreeMap",
@@ -155,7 +156,8 @@ public class UnrealEd : ModuleRules
                 "ViewportInteraction",
                 "VREditor",
                 "ClothingSystemEditor",
-                "ClothingSystemRuntime"
+                "ClothingSystemRuntime",
+                "ClothingSystemRuntimeInterface",
             }
 		);
 
@@ -227,6 +229,7 @@ public class UnrealEd : ModuleRules
                 "GeometryCacheEd",
                 "BlueprintNativeCodeGen",
                 "AnimationModifiers",
+                "ClothPainter",
             }
 		);
 
@@ -275,11 +278,6 @@ public class UnrealEd : ModuleRules
 				);
 
 			
-		}
-
-		if (Target.Platform == UnrealTargetPlatform.Mac)
-		{
-			PublicDependencyModuleNames.Add("UnrealAudioCoreAudio");
 		}
 
         if (Target.Platform == UnrealTargetPlatform.HTML5)

@@ -279,6 +279,8 @@ namespace FAnimUpdateRateManager
 	}
 }
 
+//////////////////////////////////////////////////////////////////////////
+
 USkinnedMeshComponent::USkinnedMeshComponent(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 	, AnimUpdateRateParams(nullptr)
@@ -447,15 +449,7 @@ void USkinnedMeshComponent::CreateRenderState_Concurrent()
 		if(MeshObject)
 		{
 			// Identify current LOD
-			int32 UseLOD;
-			if(MasterPoseComponent.IsValid())
-			{
-				UseLOD = FMath::Clamp(MasterPoseComponent->PredictedLODLevel, 0, MeshObject->GetSkeletalMeshResource().LODModels.Num()-1);
-			}
-			else
-			{
-				UseLOD = FMath::Clamp(PredictedLODLevel, 0, MeshObject->GetSkeletalMeshResource().LODModels.Num()-1);
-			}
+			const int32 UseLOD = FMath::Clamp(PredictedLODLevel, 0, MeshObject->GetSkeletalMeshResource().LODModels.Num()-1);
 
 			// If we have a valid LOD, set up required data, during reimport we may try to create data before we have all the LODs
 			// imported, in that case we skip until we have all the LODs
@@ -703,16 +697,16 @@ int32 USkinnedMeshComponent::GetNumMaterials() const
 
 UMaterialInterface* USkinnedMeshComponent::GetMaterial(int32 MaterialIndex) const
 {
-	if(MaterialIndex < OverrideMaterials.Num() && OverrideMaterials[MaterialIndex])
+	if(OverrideMaterials.IsValidIndex(MaterialIndex) && OverrideMaterials[MaterialIndex])
 	{
 		return OverrideMaterials[MaterialIndex];
 	}
-	else if (SkeletalMesh && MaterialIndex < SkeletalMesh->Materials.Num() && SkeletalMesh->Materials[MaterialIndex].MaterialInterface)
+	else if (SkeletalMesh && SkeletalMesh->Materials.IsValidIndex(MaterialIndex) && SkeletalMesh->Materials[MaterialIndex].MaterialInterface)
 	{
 		return SkeletalMesh->Materials[MaterialIndex].MaterialInterface;
 	}
 
-	return NULL;
+	return nullptr;
 }
 
 int32 USkinnedMeshComponent::GetMaterialIndex(FName MaterialSlotName) const
@@ -725,7 +719,7 @@ int32 USkinnedMeshComponent::GetMaterialIndex(FName MaterialSlotName) const
 			return MaterialIndex;
 		}
 	}
-	return -1;
+	return INDEX_NONE;
 }
 
 TArray<FName> USkinnedMeshComponent::GetMaterialSlotNames() const
@@ -1953,6 +1947,87 @@ FVector USkinnedMeshComponent::GetSkinnedVertexPosition(int32 VertexIndex) const
 
 }
 
+void USkinnedMeshComponent::SetRefPoseOverride(const TArray<FTransform>& NewRefPoseTransforms)
+{
+	if (!SkeletalMesh)
+	{
+		UE_LOG(LogSkeletalMesh, Warning, TEXT("SetRefPoseOverride (%s) : Not valid without SkeletalMesh assigned."), *GetName());
+		return;
+	}
+
+	const int32 NumRealBones = SkeletalMesh->RefSkeleton.GetRawBoneNum();
+
+	if (NumRealBones != NewRefPoseTransforms.Num())
+	{
+		UE_LOG(LogSkeletalMesh, Warning, TEXT("SetRefPoseOverride (%s) : Expected %d transforms, got %d."), NumRealBones, NewRefPoseTransforms.Num());
+		return;
+	}
+
+	// If override exists, reset info
+	if (RefPoseOverride)
+	{
+		RefPoseOverride->RefBasesInvMatrix.Reset();
+		RefPoseOverride->RefBonePoses.Reset();
+	}
+	// If not, allocate new struct to keep info
+	else
+	{
+		RefPoseOverride = new FSkelMeshRefPoseOverride();
+	}
+
+	// Copy input transforms into override data
+	RefPoseOverride->RefBonePoses = NewRefPoseTransforms;
+
+	// Allocate output inv matrices
+	RefPoseOverride->RefBasesInvMatrix.AddUninitialized(NumRealBones);
+
+	// Reset cached mesh-space ref pose
+	TArray<FMatrix> CachedComposedRefPoseMatrices;
+	CachedComposedRefPoseMatrices.AddUninitialized(NumRealBones);
+
+	// Compute the RefBasesInvMatrix array
+	for (int32 BoneIndex = 0; BoneIndex < NumRealBones; BoneIndex++)
+	{
+		FTransform BoneTransform = RefPoseOverride->RefBonePoses[BoneIndex];
+		// Make sure quaternion is normalized!
+		BoneTransform.NormalizeRotation();
+
+		// Render the default pose.
+		CachedComposedRefPoseMatrices[BoneIndex] = BoneTransform.ToMatrixWithScale();
+
+		// Construct mesh-space skeletal hierarchy.
+		if (BoneIndex > 0)
+		{
+			int32 ParentIndex = SkeletalMesh->RefSkeleton.GetRawParentIndex(BoneIndex);
+			CachedComposedRefPoseMatrices[BoneIndex] = CachedComposedRefPoseMatrices[BoneIndex] * CachedComposedRefPoseMatrices[ParentIndex];
+		}
+
+		// Check for zero matrix
+		FVector XAxis, YAxis, ZAxis;
+		CachedComposedRefPoseMatrices[BoneIndex].GetScaledAxes(XAxis, YAxis, ZAxis);
+		if (XAxis.IsNearlyZero(SMALL_NUMBER) &&
+			YAxis.IsNearlyZero(SMALL_NUMBER) &&
+			ZAxis.IsNearlyZero(SMALL_NUMBER))
+		{
+			// this is not allowed, warn them 
+			UE_LOG(LogSkeletalMesh, Warning, TEXT("Reference Pose for joint (%s) includes NIL matrix. Zero scale isn't allowed on ref pose. "), *SkeletalMesh->RefSkeleton.GetBoneName(BoneIndex).ToString());
+		}
+
+		// Precompute inverse so we can use from-refpose-skin vertices.
+		RefPoseOverride->RefBasesInvMatrix[BoneIndex] = CachedComposedRefPoseMatrices[BoneIndex].Inverse();
+	}
+}
+
+void USkinnedMeshComponent::ClearRefPoseOverride()
+{
+	// Release mem for override info
+	if (RefPoseOverride)
+	{
+		delete RefPoseOverride;
+		RefPoseOverride = nullptr;
+	}
+}
+
 void USkinnedMeshComponent::ComputeSkinnedPositions(TArray<FVector> & OutPositions) const
 {
 	OutPositions.Empty();
@@ -2163,6 +2238,33 @@ void USkinnedMeshComponent::SetMinLOD(int32 InNewMinLOD)
 	MinLodModel = FMath::Clamp(InNewMinLOD, 0, MaxLODIndex);
 }
 
+void USkinnedMeshComponent::SetCastCapsuleDirectShadow(bool bNewValue)
+{
+	if (bNewValue != bCastCapsuleDirectShadow)
+	{
+		bCastCapsuleDirectShadow = bNewValue;
+		MarkRenderStateDirty();
+	}
+}
+
+void USkinnedMeshComponent::SetCastCapsuleIndirectShadow(bool bNewValue)
+{
+	if (bNewValue != bCastCapsuleIndirectShadow)
+	{
+		bCastCapsuleIndirectShadow = bNewValue;
+		MarkRenderStateDirty();
+	}
+}
+
+void USkinnedMeshComponent::SetCapsuleIndirectShadowMinVisibility(float NewValue)
+{
+	if (NewValue != CapsuleIndirectShadowMinVisibility)
+	{
+		CapsuleIndirectShadowMinVisibility = NewValue;
+		MarkRenderStateDirty();
+	}
+}
+
 bool USkinnedMeshComponent::UpdateLODStatus()
 {
 	// Predict the best (min) LOD level we are going to need. Basically we use the Min (best) LOD the renderer desired last frame.
@@ -2183,11 +2285,16 @@ bool USkinnedMeshComponent::UpdateLODStatus()
 		}
 		else
 		{
-			// If no MeshObject - just assume lowest LOD.
-			if (MeshObject)
+			// Match LOD of MasterPoseComponent if it exists.
+			if (MasterPoseComponent.IsValid())
+			{
+				PredictedLODLevel = FMath::Clamp(MasterPoseComponent->PredictedLODLevel, 0, MaxLODIndex);
+			}
+			else if (MeshObject)
 			{
 				PredictedLODLevel = FMath::Clamp(MeshObject->MinDesiredLODLevel + GSkeletalMeshLODBias, 0, MaxLODIndex);
 			}
+			// If no MeshObject - just assume lowest LOD.
 			else
 			{
 				PredictedLODLevel = MaxLODIndex;
@@ -2321,6 +2428,13 @@ void USkinnedMeshComponent::BeginDestroy()
 {
 	Super::BeginDestroy();
 	ReleaseResources();
+
+	// Release ref pose override if allocated
+	if (RefPoseOverride)
+	{
+		delete RefPoseOverride;
+		RefPoseOverride = nullptr;
+	}
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -2495,19 +2609,21 @@ void USkinnedMeshComponent::ClearVertexColorOverride(int32 LODIndex)
  * 	This includes remapping from skeleton bone index to section bone index.
  */
 template <bool bExtraBoneInfluencesT>
-void CreateSkinWeightsArray(
-	int32 ExpectedNumVerts,
+void CreateSectionSkinWeightsArray(
 	const TArray<FSkelMeshSkinWeightInfo>& InSourceWeights,
+	int32 StartIndex,
+	int32 NumVerts,
 	const TMap<int32, int32>& SkelToSectionBoneMap,
-	TArray<TSkinWeightInfo<bExtraBoneInfluencesT>>& OutGPUWeights)
+	TArray<TSkinWeightInfo<bExtraBoneInfluencesT>>& OutGPUWeights,
+	TArray<int32>& OutInvalidBones)
 {
-	OutGPUWeights.Reset(ExpectedNumVerts);
-	OutGPUWeights.AddUninitialized(ExpectedNumVerts);
+	OutGPUWeights.AddUninitialized(NumVerts);
 
-	bool bInvalidBone = false;
-	int32 VertIndex = 0;
+	TArray<int32> InvalidBones;
+
+	bool bWeightUnderrun = false;
 	// Iterate over new output buffer
-	while (VertIndex < ExpectedNumVerts)
+	for(int VertIndex = StartIndex; VertIndex < StartIndex + NumVerts; VertIndex++)
 	{
 		TSkinWeightInfo<bExtraBoneInfluencesT>& TargetWeight = OutGPUWeights[VertIndex];
 		// while we have valid entries in input buffer
@@ -2518,26 +2634,36 @@ void CreateSkinWeightsArray(
 			// Iterate over influences
 			for (int32 InfIndex = 0; InfIndex < TargetWeight.NumInfluences; InfIndex++)
 			{
-				// See if we have a valid bone mapping for desired bone
-				const int32* SectionBoneIndexPtr = SkelToSectionBoneMap.Find(SrcWeight.Bones[InfIndex]);
-				// We do, use remapped value and copy weight
-				if (SectionBoneIndexPtr)
+				// init to zero
+				TargetWeight.InfluenceBones[InfIndex] = 0;
+				TargetWeight.InfluenceWeights[InfIndex] = 0;
+
+				// if we have a valid weight, see if we have a valid bone mapping for desired bone
+				uint8 InfWeight = SrcWeight.Weights[InfIndex];
+				if (InfWeight > 0)
 				{
-					TargetWeight.InfluenceBones[InfIndex] = *SectionBoneIndexPtr;
-					TargetWeight.InfluenceWeights[InfIndex] = SrcWeight.Weights[InfIndex];
-				}
-				// We don't, we'll warn, and zero out contribution (this will mess up mesh, but not clear how to resolve this)
-				else
-				{
-					bInvalidBone = true;
-					TargetWeight.InfluenceBones[InfIndex] = 0;
-					TargetWeight.InfluenceWeights[InfIndex] = 0;
+					const int32 SkelBoneIndex = SrcWeight.Bones[InfIndex];
+					const int32* SectionBoneIndexPtr = SkelToSectionBoneMap.Find(SkelBoneIndex);
+
+					// We do, use remapped value and copy weight
+					if (SectionBoneIndexPtr)
+					{
+						TargetWeight.InfluenceBones[InfIndex] = *SectionBoneIndexPtr;
+						TargetWeight.InfluenceWeights[InfIndex] = InfWeight;
+					}
+					// We don't, we'll warn, and leave zeros (this will mess up mesh, but not clear how to resolve this...)
+					else
+					{
+						OutInvalidBones.AddUnique(SkelBoneIndex);
+					}
 				}
 			}
 		}
 		// Oops, 
 		else
 		{
+			bWeightUnderrun = true;
+
 			TargetWeight.InfluenceBones[0] = 0;
 			TargetWeight.InfluenceWeights[0] = 255;
 
@@ -2547,15 +2673,55 @@ void CreateSkinWeightsArray(
 				TargetWeight.InfluenceWeights[InfIndex] = 0;
 			}
 		}
-
-		VertIndex++;
 	}
 
-	if (bInvalidBone)
+	if (bWeightUnderrun)
 	{
-		UE_LOG(LogSkinnedMeshComp, Warning, TEXT("SetSkinWeightOverride: Invalid bone index specified in new skin weight buffer."));
+		UE_LOG(LogSkinnedMeshComp, Warning, TEXT("SetSkinWeightOverride: Too few weights specified."));
 	}
 }
+
+template <bool bExtraBoneInfluencesT>
+void CreateSkinWeightsArray(
+	const TArray<FSkelMeshSkinWeightInfo>& InSourceWeights,
+	FStaticLODModel& LODModel,
+	TArray<TSkinWeightInfo<bExtraBoneInfluencesT>>& OutGPUWeights,
+	const FReferenceSkeleton& RefSkel)
+{
+	// Index of first vertex in current section, in the big overall buffer
+	int32 BaseVertIndex = 0;
+	for (int32 SectionIdx = 0; SectionIdx < LODModel.Sections.Num(); SectionIdx++)
+	{
+		const FSkelMeshSection& Section = LODModel.Sections[SectionIdx];
+		const int32 NumVertsInSection = Section.GetNumVertices();
+
+		// Build inverse mapping from skeleton bone index to section vertex index
+		TMap<int32, int32> SkelToSectionBoneMap;
+		for (int32 i = 0; i < Section.BoneMap.Num(); i++)
+		{
+			SkelToSectionBoneMap.Add(Section.BoneMap[i], i);
+		}
+
+		// Convert skin weight struct format and assign to new vertex buffer (templated by num weights)
+		TArray<int32> InvalidBones;
+		CreateSectionSkinWeightsArray<bExtraBoneInfluencesT>(InSourceWeights, BaseVertIndex, NumVertsInSection, SkelToSectionBoneMap, OutGPUWeights, InvalidBones);
+
+		// Log info for invalid bones
+		if (InvalidBones.Num() > 0)
+		{
+			UE_LOG(LogSkinnedMeshComp, Warning, TEXT("SetSkinWeightOverride: Invalid bones index specified for section %d:"), SectionIdx);
+
+			for (int32 BoneIndex : InvalidBones)
+			{
+				FName BoneName = RefSkel.GetBoneName(BoneIndex);
+				UE_LOG(LogSkinnedMeshComp, Warning, TEXT("SetSkinWeightOverride: %d %s"), BoneIndex, *BoneName.ToString());
+			}
+		}
+
+		BaseVertIndex += NumVertsInSection;
+	}
+}
+
 
 void USkinnedMeshComponent::SetSkinWeightOverride(int32 LODIndex, const TArray<FSkelMeshSkinWeightInfo>& SkinWeights)
 {
@@ -2585,13 +2751,6 @@ void USkinnedMeshComponent::SetSkinWeightOverride(int32 LODIndex, const TArray<F
 				UE_LOG(LogSkinnedMeshComp, Warning, TEXT("SetSkinWeightOverride: Too many weights - expected %d, got %d - truncating"), ExpectedNumVerts, SkinWeights.Num());
 			}
 
-			// Build inverse mapping from skeleton bone index to section vertex index
-			TMap<int32, int32> SkelToSectionBoneMap;
-			for (int32 i = 0; i < LODModel.ActiveBoneIndices.Num(); i++)
-			{
-				SkelToSectionBoneMap.Add(LODModel.ActiveBoneIndices[i], i);
-			}
-
 			bool bExtraWeights = LODModel.DoesVertexBufferHaveExtraBoneInfluences();
 
 			// Allocate skin weight override buffer
@@ -2599,17 +2758,18 @@ void USkinnedMeshComponent::SetSkinWeightOverride(int32 LODIndex, const TArray<F
 			Info.OverrideSkinWeights->SetNeedsCPUAccess(true);
 			Info.OverrideSkinWeights->SetHasExtraBoneInfluences(bExtraWeights);
 
-			// Convert skin weight struct format and assign to new vertex buffer (templated by num weights)
+			const FReferenceSkeleton& RefSkel = SkeletalMesh->RefSkeleton;
+
 			if (bExtraWeights)
 			{
 				TArray<TSkinWeightInfo<true>> GPUWeights;
-				CreateSkinWeightsArray<true>(ExpectedNumVerts, SkinWeights, SkelToSectionBoneMap, GPUWeights);
+				CreateSkinWeightsArray<true>(SkinWeights, LODModel, GPUWeights, RefSkel);
 				*(Info.OverrideSkinWeights) = GPUWeights;
 			}
 			else
 			{
 				TArray<TSkinWeightInfo<false>> GPUWeights;
-				CreateSkinWeightsArray<false>(ExpectedNumVerts, SkinWeights, SkelToSectionBoneMap, GPUWeights);
+				CreateSkinWeightsArray<false>(SkinWeights, LODModel, GPUWeights, RefSkel);
 				*(Info.OverrideSkinWeights) = GPUWeights;
 			}
 

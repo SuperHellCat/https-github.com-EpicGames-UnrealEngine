@@ -798,6 +798,7 @@ struct FEDLBootNotificationManager
 			FFixedBootOrder()
 			{
 				// add these in reverse order of when we want them processed
+				Array.Add("/Script/Engine/Default__SoundBase");
 				Array.Add("/Script/Engine/Default__MaterialInterface");
 				Array.Add("/Script/Engine/Default__DeviceProfileManager");
 			}
@@ -4188,11 +4189,12 @@ EAsyncPackageState::Type FAsyncLoadingThread::ProcessAsyncLoading(int32& OutPack
 
 	double TickStartTime = FPlatformTime::Seconds();
 
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	FScopedRecursionNotAllowed RecursionGuard;
+#endif
+
 	if (GEventDrivenLoaderEnabled)
 	{
-#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
-		FScopedRecursionNotAllowed RecursionGuard;
-#endif
 		FAsyncLoadingTickScope InAsyncLoadingTick;
 		uint32 LoopIterations = 0;
 
