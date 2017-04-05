@@ -1041,6 +1041,8 @@ void UEngine::Init(IEngineLoop* InEngineLoop)
 		FModuleManager::Get().LoadModuleChecked(TEXT("StreamingPauseRendering"));
 		FModuleManager::Get().LoadModuleChecked(TEXT("Niagara"));
 		FModuleManager::Get().LoadModuleChecked(TEXT("GeometryCache"));
+		FModuleManager::Get().LoadModuleChecked(TEXT("MovieScene"));
+		FModuleManager::Get().LoadModuleChecked(TEXT("MovieSceneTracks"));
 	}
 
 	// Finish asset manager loading
@@ -2713,6 +2715,22 @@ bool UEngine::Exec( UWorld* InWorld, const TCHAR* Cmd, FOutputDevice& Ar )
 	}
 
 	{
+		FString LanguageName;
+		if (FParse::Value(Cmd, TEXT("LANGUAGE="), LanguageName))
+		{
+			FInternationalization::Get().SetCurrentLanguage(LanguageName);
+		}
+	}
+
+	{
+		FString LocaleName;
+		if (FParse::Value(Cmd, TEXT("LOCALE="), LocaleName))
+		{
+			FInternationalization::Get().SetCurrentLocale(LocaleName);
+		}
+	}
+
+	{
 		FString ConfigFilePath;
 		if (FParse::Value(Cmd, TEXT("REGENLOC="), ConfigFilePath))
 		{
@@ -3514,9 +3532,14 @@ bool UEngine::HandleListPreCacheMapPackagesCommand(const TCHAR* Cmd, FOutputDevi
 	return true;
 }
 
+extern void ToggleFreezeFoliageCulling();
+
 bool UEngine::HandleFreezeRenderingCommand( const TCHAR* Cmd, FOutputDevice& Ar, UWorld* InWorld  )
 {
 	ProcessToggleFreezeCommand( InWorld );
+
+	ToggleFreezeFoliageCulling();
+
 	return true;
 }
 
@@ -9824,7 +9847,10 @@ bool UEngine::LoadMap( FWorldContext& WorldContext, FURL URL, class UPendingNetG
 		{
 			if (!bCalled)
 			{
+				PRAGMA_DISABLE_DEPRECATION_WARNINGS
 				FCoreUObjectDelegates::PostLoadMap.Broadcast();
+				PRAGMA_ENABLE_DEPRECATION_WARNINGS
+				FCoreUObjectDelegates::PostLoadMapWithWorld.Broadcast(nullptr);
 			}
 		}
 	} PostLoadMapCaller;
@@ -10282,7 +10308,10 @@ bool UEngine::LoadMap( FWorldContext& WorldContext, FURL URL, class UPendingNetG
 
 	// send a callback message
 	PostLoadMapCaller.bCalled = true;
+	PRAGMA_DISABLE_DEPRECATION_WARNINGS
 	FCoreUObjectDelegates::PostLoadMap.Broadcast();
+	PRAGMA_ENABLE_DEPRECATION_WARNINGS
+	FCoreUObjectDelegates::PostLoadMapWithWorld.Broadcast(WorldContext.World());
 	
 	WorldContext.World()->bWorldWasLoadedThisTick = true;
 
@@ -10677,7 +10706,7 @@ UGameViewportClient* UEngine::GameViewportForWorld(const UWorld *InWorld) const
 
 bool UEngine::AreGameAnalyticsEnabled() const
 { 
-	return GetDefault<UEndUserSettings>()->bSendAnonymousUsageDataToEpic;
+	return FPlatformMisc::AllowSendAnonymousGameUsageDataToEpic() && GetDefault<UEndUserSettings>()->bSendAnonymousUsageDataToEpic;
 }
 
 bool UEngine::AreGameAnalyticsAnonymous() const

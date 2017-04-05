@@ -134,6 +134,29 @@ void FSlateEditorStyle::FStyle::SyncSettings()
 		FCoreStyle::SetSelectionColor( Settings->SelectionColor );
 		FCoreStyle::SetInactiveSelectionColor( Settings->InactiveSelectionColor );
 		FCoreStyle::SetPressedSelectionColor( Settings->PressedSelectionColor );
+
+		// Sync the window background settings
+		FSlateColor WindowBackgroundColor(FLinearColor::White);
+		FSlateBrush WindowBackgroundMain(IMAGE_BRUSH("Old/Window/WindowBackground", FVector2D(74, 74), FLinearColor::White, ESlateBrushTileType::Both));
+		FSlateBrush WindowBackgroundChild(IMAGE_BRUSH("Common/NoiseBackground", FVector2D(64, 64), FLinearColor::White, ESlateBrushTileType::Both));
+
+		WindowBackgroundColor = Settings->EditorWindowBackgroundColor;
+
+		FSlateBrush DummyBrush;
+		if (Settings->EditorMainWindowBackgroundOverride != DummyBrush)
+		{
+			WindowBackgroundMain = Settings->EditorMainWindowBackgroundOverride;
+		}
+
+		if (Settings->EditorChildWindowBackgroundOverride != DummyBrush)
+		{
+			WindowBackgroundChild = Settings->EditorChildWindowBackgroundOverride;
+		}
+
+		FWindowStyle& WindowStyle = const_cast<FWindowStyle&>(FCoreStyle::Get().GetWidgetStyle<FWindowStyle>("Window"));
+		WindowStyle.SetBackgroundColor(WindowBackgroundColor)
+			.SetBackgroundBrush(WindowBackgroundMain)
+			.SetChildBackgroundBrush(WindowBackgroundChild);
 	}
 }
 
@@ -1032,6 +1055,12 @@ void FSlateEditorStyle::FStyle::SetupGeneralStyles()
 			.SetPressed(IMAGE_BRUSH( "/Sequencer/Transport_Bar/Loop_Toggle_24x", Icon24x24 ))
 		);
 
+		Set( "Animation.Loop.SelectionRange", FButtonStyle( Button )
+			.SetNormal(IMAGE_BRUSH( "/Sequencer/Transport_Bar/Loop_SelectionRange_24x_OFF", Icon24x24 ))
+			.SetHovered(IMAGE_BRUSH( "/Sequencer/Transport_Bar/Loop_SelectionRange_24x_OFF", Icon24x24 ))
+			.SetPressed(IMAGE_BRUSH( "/Sequencer/Transport_Bar/Loop_SelectionRange_24x", Icon24x24 ))
+		);
+
 		Set( "Animation.Record", FButtonStyle( Button )
 			.SetNormal(IMAGE_BRUSH( "/Sequencer/Transport_Bar/Record_24x_OFF", Icon24x24 ))
 			.SetHovered(IMAGE_BRUSH( "/Sequencer/Transport_Bar/Record_24x_OFF", Icon24x24 ))
@@ -1771,6 +1800,8 @@ void FSlateEditorStyle::FStyle::SetupGeneralStyles()
 		Set( "Sequencer.Section.FilmBorder", new IMAGE_BRUSH( TEXT("Sequencer/SectionFilmBorder"), FVector2D(10, 7), FLinearColor::White, ESlateBrushTileType::Horizontal ) );
 		Set( "Sequencer.Section.GripLeft", new BOX_BRUSH( "Sequencer/SectionGripLeft", FMargin(5.f/16.f) ) );
 		Set( "Sequencer.Section.GripRight", new BOX_BRUSH( "Sequencer/SectionGripRight", FMargin(5.f/16.f) ) );
+
+		Set( "Sequencer.Section.PreRoll", new BORDER_BRUSH( TEXT("Sequencer/PreRoll"), FMargin(0.f, .5f, 0.f, .5f) ) );
 
 		Set( "Sequencer.Section.StripeOverlay", new BOX_BRUSH( "Sequencer/SectionStripeOverlay", FMargin(0.f, .5f) ) );
 
@@ -2837,23 +2868,31 @@ void FSlateEditorStyle::FStyle::SetupWindowStyles()
 
 		Set( "ChildWindow.Background",            new IMAGE_BRUSH( "Common/NoiseBackground", FVector2D(64, 64), FLinearColor::White, ESlateBrushTileType::Both) );
 
-		Set( "Window", FWindowStyle()
-#if !PLATFORM_MAC
-			.SetMinimizeButtonStyle( MinimizeButtonStyle )
-			.SetMaximizeButtonStyle( MaximizeButtonStyle )
-			.SetRestoreButtonStyle( RestoreButtonStyle )
-			.SetCloseButtonStyle( CloseButtonStyle )
-#endif
-			.SetTitleTextStyle( TitleTextStyle )
-			.SetActiveTitleBrush( IMAGE_BRUSH( "Old/Window/WindowTitle", Icon32x32, FLinearColor(1,1,1,1), ESlateBrushTileType::Horizontal  ) )
-			.SetInactiveTitleBrush( IMAGE_BRUSH( "Old/Window/WindowTitle_Inactive", Icon32x32, FLinearColor(1,1,1,1), ESlateBrushTileType::Horizontal  ) )
-			.SetFlashTitleBrush( IMAGE_BRUSH( "Old/Window/WindowTitle_Flashing", Icon24x24, FLinearColor(1,1,1,1), ESlateBrushTileType::Horizontal  ) )
-			.SetOutlineBrush( BORDER_BRUSH( "Old/Window/WindowOutline", FMargin(3.0f/32.0f) ) )
-			.SetOutlineColor( FLinearColor(0.1f, 0.1f, 0.1f, 1.0f) )
-			.SetBorderBrush( BOX_BRUSH( "Old/Window/WindowBorder", 0.48f ) )
-			.SetBackgroundBrush( IMAGE_BRUSH( "Old/Window/WindowBackground", FVector2D(74, 74), FLinearColor::White, ESlateBrushTileType::Both) )
-			.SetChildBackgroundBrush( IMAGE_BRUSH( "Common/NoiseBackground", FVector2D(64, 64), FLinearColor::White, ESlateBrushTileType::Both) )
-			);
+		// Update the window style in the *core* style, as SWindow is hardcoded to pull from that 
+		FSlateColor WindowBackgroundColor(FLinearColor::White);
+		FSlateBrush WindowBackgroundMain(IMAGE_BRUSH("Old/Window/WindowBackground", FVector2D(74, 74), FLinearColor::White, ESlateBrushTileType::Both));
+		FSlateBrush WindowBackgroundChild(IMAGE_BRUSH("Common/NoiseBackground", FVector2D(64, 64), FLinearColor::White, ESlateBrushTileType::Both));
+
+		if (Settings.IsValid())
+		{
+			WindowBackgroundColor = Settings->EditorWindowBackgroundColor;
+
+			FSlateBrush DummyBrush;
+			if (Settings->EditorMainWindowBackgroundOverride != DummyBrush)
+			{
+				WindowBackgroundMain = Settings->EditorMainWindowBackgroundOverride;
+			}
+
+			if (Settings->EditorChildWindowBackgroundOverride != DummyBrush)
+			{
+				WindowBackgroundChild = Settings->EditorChildWindowBackgroundOverride;
+			}
+		}
+
+		FWindowStyle& WindowStyle = const_cast<FWindowStyle&>(FCoreStyle::Get().GetWidgetStyle<FWindowStyle>("Window"));
+		WindowStyle.SetBackgroundColor(WindowBackgroundColor)
+			.SetBackgroundBrush(WindowBackgroundMain)
+			.SetChildBackgroundBrush(WindowBackgroundChild);
 	}
 }
 
@@ -4305,7 +4344,7 @@ void FSlateEditorStyle::FStyle::SetupGraphEditorStyles()
 		Set( "GraphEditor.FunctionOL.Override", new IMAGE_BRUSH( "Graph/Icons/Overlay_Override", Icon22x22 ) );
 		Set( "GraphEditor.FunctionOL.PotentialOverride", new IMAGE_BRUSH( "Graph/Icons/Overlay_PotentialOverride", Icon22x22 ) );
 
-		Set( "GraphEditor.GetSequenceBindings", new IMAGE_BRUSH("Icons/icon_Blueprint_GetSequenceBindings_16x", Icon16x16));
+		Set( "GraphEditor.GetSequenceBinding", new IMAGE_BRUSH("Icons/icon_Blueprint_GetSequenceBinding_16x", Icon16x16));
 
 		Set( "GraphEditor.HideUnusedPins", new IMAGE_BRUSH( "Icons/hide_unusedpins", Icon40x40 ) );
 		Set( "GraphEditor.HideUnusedPins.Small", new IMAGE_BRUSH( "Icons/hide_unusedpins", Icon20x20 ) );
@@ -6020,6 +6059,7 @@ void FSlateEditorStyle::FStyle::SetupContentBrowserStyle()
 		Set( "ContentBrowser.PrimitiveCube", new IMAGE_BRUSH( "ContentBrowser/ThumbnailCube", Icon32x32 ) );
 		Set( "ContentBrowser.PrimitivePlane", new IMAGE_BRUSH( "ContentBrowser/ThumbnailPlane", Icon32x32 ) );
 		Set( "ContentBrowser.PrimitiveCylinder", new IMAGE_BRUSH( "ContentBrowser/ThumbnailCylinder", Icon32x32 ) );
+		Set( "ContentBrowser.ResetPrimitiveToDefault", new IMAGE_BRUSH("ContentBrowser/ThumbnailReset", Icon32x32) );
 
 		Set( "ContentBrowser.TopBar.Font", FTextBlockStyle( NormalText )
 			.SetFont( TTF_CORE_FONT( "Fonts/Roboto-Bold", 11 ) )

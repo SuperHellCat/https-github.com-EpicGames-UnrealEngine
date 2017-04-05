@@ -1350,6 +1350,28 @@ bool FConfigFile::GetText( const TCHAR* Section, const TCHAR* Key, FText& Value 
 	return FTextStringHelper::ReadFromString( *PairString->GetValue(), Value, Section );
 }
 
+bool FConfigFile::GetInt(const TCHAR* Section, const TCHAR* Key, int& Value) const
+{
+	FString Text;
+	if (GetString(Section, Key, Text))
+	{
+		Value = FCString::Atoi(*Text);
+		return true;
+	}
+	return false;
+}
+
+bool FConfigFile::GetFloat(const TCHAR* Section, const TCHAR* Key, float& Value) const
+{
+	FString Text;
+	if (GetString(Section, Key, Text))
+	{
+		Value = FCString::Atof(*Text);
+		return true;
+	}
+	return false;
+}
+
 bool FConfigFile::GetInt64( const TCHAR* Section, const TCHAR* Key, int64& Value ) const
 {
 	FString Text; 
@@ -1594,6 +1616,18 @@ FConfigFile* FConfigCacheIni::Find( const FString& Filename, bool CreateIfNotFou
 		UE_LOG(LogConfig, Log, TEXT( "GConfig::Find has loaded file:  %s" ), *Filename );
 	}
 	return Result;
+}
+
+FConfigFile* FConfigCacheIni::FindConfigFileWithBaseName(FName BaseName)
+{
+	for (TPair<FString,FConfigFile>& CurrentFilePair : *this)
+	{
+		if (CurrentFilePair.Value.Name == BaseName)
+		{
+			return &CurrentFilePair.Value;
+		}
+	}
+	return nullptr;
 }
 
 void FConfigCacheIni::Flush( bool Read, const FString& Filename )
@@ -3159,7 +3193,32 @@ bool FConfigCacheIni::LoadLocalIniFile(FConfigFile& ConfigFile, const TCHAR* Ini
 {
 	DECLARE_SCOPE_CYCLE_COUNTER( TEXT( "FConfigCacheIni::LoadLocalIniFile" ), STAT_FConfigCacheIni_LoadLocalIniFile, STATGROUP_LoadTime );
 
-	return LoadExternalIniFile(ConfigFile, IniName, *FPaths::EngineConfigDir(), *FPaths::SourceConfigDir(), bIsBaseIniName, Platform, bForceReload, false);
+	FString EngineConfigDir = FPaths::EngineConfigDir();
+	FString SourceConfigDir = FPaths::SourceConfigDir();
+
+	if (bIsBaseIniName)
+	{
+		FConfigFile* BaseConfig = GConfig->FindConfigFileWithBaseName(IniName);
+		// If base ini, try to use an existing GConfig file to set the config directories instead of assuming defaults
+
+		if (BaseConfig)
+		{
+			FIniFilename* EngineFilename = BaseConfig->SourceIniHierarchy.Find(EConfigFileHierarchy::EngineDirBase);
+			if (EngineFilename)
+			{
+				EngineConfigDir = FPaths::GetPath(EngineFilename->Filename) + TEXT("/");
+			}
+
+			FIniFilename* GameFilename = BaseConfig->SourceIniHierarchy.Find(EConfigFileHierarchy::GameDirDefault);
+			if (GameFilename)
+			{
+				SourceConfigDir = FPaths::GetPath(GameFilename->Filename) + TEXT("/");
+			}
+		}
+
+	}
+
+	return LoadExternalIniFile(ConfigFile, IniName, *EngineConfigDir, *SourceConfigDir, bIsBaseIniName, Platform, bForceReload, false);
 }
 
 bool FConfigCacheIni::LoadExternalIniFile(FConfigFile& ConfigFile, const TCHAR* IniName, const TCHAR* EngineConfigDir, const TCHAR* SourceConfigDir, bool bIsBaseIniName, const TCHAR* Platform, bool bForceReload, bool bWriteDestIni, bool bAllowGeneratedIniWhenCooked, const TCHAR* GeneratedConfigDir)
