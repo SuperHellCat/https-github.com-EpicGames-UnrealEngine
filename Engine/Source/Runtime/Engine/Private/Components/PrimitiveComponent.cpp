@@ -187,6 +187,7 @@ UPrimitiveComponent::UPrimitiveComponent(const FObjectInitializer& ObjectInitial
 	CanCharacterStepUpOn = ECB_Yes;
 	ComponentId.PrimIDValue = NextComponentId.Increment();
 	CustomDepthStencilValue = 0;
+	CustomDepthStencilWriteMask = ERendererStencilMask::ERSM_Default;
 
 	bUseEditorCompositing = false;
 
@@ -200,7 +201,12 @@ UPrimitiveComponent::UPrimitiveComponent(const FObjectInitializer& ObjectInitial
 	bWantsOnUpdateTransform = true;
 
 	bCachedAllCollideableDescendantsRelative = false;
+	bAttachedToStreamingManagerAsStatic = false;
+	bAttachedToStreamingManagerAsDynamic = false;
+	bHandledByStreamingManagerAsDynamic = false;
 	LastCheckedAllCollideableDescendantsTime = 0.f;
+	
+	bApplyImpulseOnDamage = true;
 }
 
 bool UPrimitiveComponent::UsesOnlyUnlitMaterials() const
@@ -426,6 +432,17 @@ void UPrimitiveComponent::CreateRenderState_Concurrent()
 	{
 		GetWorld()->Scene->AddPrimitive(this);
 	}
+
+	// To prevent processing components twice (since they are also processed in the FLevelTextureManager when the level becomes visible)
+	// here we only handles component that are already dynamic and that need an updates.
+	if (bHandledByStreamingManagerAsDynamic)
+	{
+		FStreamingManagerCollection* Collection = IStreamingManager::Get_Concurrent();
+		if (Collection)
+		{
+			Collection->NotifyPrimitiveUpdated_Concurrent(this);
+		}
+	}
 }
 
 void UPrimitiveComponent::SendRenderTransform_Concurrent()
@@ -446,9 +463,6 @@ void UPrimitiveComponent::SendRenderTransform_Concurrent()
 void UPrimitiveComponent::OnRegister()
 {
 	Super::OnRegister();
-
-	// Notify the streaming system. Will only update the component data if it's already tracked.
-	IStreamingManager::Get().NotifyPrimitiveUpdated(this);
 
 	if (bCanEverAffectNavigation)
 	{
@@ -482,6 +496,12 @@ void UPrimitiveComponent::OnUnregister()
 	}
 
 	Super::OnUnregister();
+
+	// Unregister only has effect on dynamic primitives (as static ones are handled when the level visibility changes).
+	if (bAttachedToStreamingManagerAsDynamic)
+	{
+		IStreamingManager::Get().NotifyPrimitiveDetached(this);
+	}
 
 	if (bCanEverAffectNavigation)
 	{
@@ -607,7 +627,9 @@ void UPrimitiveComponent::OnCreatePhysicsState()
 #if UE_WITH_PHYSICS
 			// Create the body.
 			BodyInstance.InitBody(BodySetup, BodyTransform, this, GetWorld()->GetPhysicsScene());		
+#if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
 			SendRenderDebugPhysics();
+#endif // !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
 #endif //UE_WITH_PHYSICS
 
 #if WITH_EDITOR
@@ -682,17 +704,18 @@ void UPrimitiveComponent::OnDestroyPhysicsState()
 		BodyInstance.TermBody();
 	}
 
-#if !UE_BUILD_SHIPPING
+#if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
 	SendRenderDebugPhysics();
 #endif
 
 	Super::OnDestroyPhysicsState();
 }
 
-void UPrimitiveComponent::SendRenderDebugPhysics()
+#if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
+void UPrimitiveComponent::SendRenderDebugPhysics(FPrimitiveSceneProxy* OverrideSceneProxy)
 {
-#if !UE_BUILD_SHIPPING
-	if (SceneProxy)
+	FPrimitiveSceneProxy* UseSceneProxy = OverrideSceneProxy ? OverrideSceneProxy : SceneProxy;
+	if (UseSceneProxy)
 	{
 		TArray<FPrimitiveSceneProxy::FDebugMassData> DebugMassData;
 		if (!IsWelded() && Mobility != EComponentMobility::Static)
@@ -714,13 +737,13 @@ void UPrimitiveComponent::SendRenderDebugPhysics()
 		}
 
 		ENQUEUE_UNIQUE_RENDER_COMMAND_TWOPARAMETER(
-			PrimitiveComponent_SendRenderDebugPhysics, FPrimitiveSceneProxy*, UseSceneProxy, SceneProxy, TArray<FPrimitiveSceneProxy::FDebugMassData>, UseDebugMassData, DebugMassData,
+			PrimitiveComponent_SendRenderDebugPhysics, FPrimitiveSceneProxy*, PassedSceneProxy, UseSceneProxy, TArray<FPrimitiveSceneProxy::FDebugMassData>, UseDebugMassData, DebugMassData,
 		{
-			UseSceneProxy->SetDebugMassData(UseDebugMassData);
+				PassedSceneProxy->SetDebugMassData(UseDebugMassData);
 		});
 	}
-#endif
 }
+#endif
 
 FMatrix UPrimitiveComponent::GetRenderMatrix() const
 {
@@ -923,25 +946,28 @@ void UPrimitiveComponent::UpdateCollisionProfile()
 
 void UPrimitiveComponent::ReceiveComponentDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
 {
-	UDamageType const* const DamageTypeCDO = DamageEvent.DamageTypeClass ? DamageEvent.DamageTypeClass->GetDefaultObject<UDamageType>() : GetDefault<UDamageType>();
-	if (DamageEvent.IsOfType(FPointDamageEvent::ClassID))
+	if (bApplyImpulseOnDamage)
 	{
-		FPointDamageEvent* const PointDamageEvent = (FPointDamageEvent*) &DamageEvent;
-		if((DamageTypeCDO->DamageImpulse > 0.f) && !PointDamageEvent->ShotDirection.IsNearlyZero())
+		UDamageType const* const DamageTypeCDO = DamageEvent.DamageTypeClass ? DamageEvent.DamageTypeClass->GetDefaultObject<UDamageType>() : GetDefault<UDamageType>();
+		if (DamageEvent.IsOfType(FPointDamageEvent::ClassID))
 		{
-			if (IsSimulatingPhysics(PointDamageEvent->HitInfo.BoneName))
+			FPointDamageEvent* const PointDamageEvent = (FPointDamageEvent*)&DamageEvent;
+			if ((DamageTypeCDO->DamageImpulse > 0.f) && !PointDamageEvent->ShotDirection.IsNearlyZero())
 			{
-				FVector const ImpulseToApply = PointDamageEvent->ShotDirection.GetSafeNormal() * DamageTypeCDO->DamageImpulse;
-				AddImpulseAtLocation(ImpulseToApply, PointDamageEvent->HitInfo.ImpactPoint, PointDamageEvent->HitInfo.BoneName);
+				if (IsSimulatingPhysics(PointDamageEvent->HitInfo.BoneName))
+				{
+					FVector const ImpulseToApply = PointDamageEvent->ShotDirection.GetSafeNormal() * DamageTypeCDO->DamageImpulse;
+					AddImpulseAtLocation(ImpulseToApply, PointDamageEvent->HitInfo.ImpactPoint, PointDamageEvent->HitInfo.BoneName);
+				}
 			}
 		}
-	}
-	else if (DamageEvent.IsOfType(FRadialDamageEvent::ClassID))
-	{
-		FRadialDamageEvent* const RadialDamageEvent = (FRadialDamageEvent*) &DamageEvent;
-		if ( (DamageTypeCDO->DamageImpulse > 0.f) )
+		else if (DamageEvent.IsOfType(FRadialDamageEvent::ClassID))
 		{
-			AddRadialImpulse(RadialDamageEvent->Origin, RadialDamageEvent->Params.OuterRadius, DamageTypeCDO->DamageImpulse, RIF_Linear, DamageTypeCDO->bRadialDamageVelChange);
+			FRadialDamageEvent* const RadialDamageEvent = (FRadialDamageEvent*)&DamageEvent;
+			if (DamageTypeCDO->DamageImpulse > 0.f)
+			{
+				AddRadialImpulse(RadialDamageEvent->Origin, RadialDamageEvent->Params.OuterRadius, DamageTypeCDO->DamageImpulse, RIF_Linear, DamageTypeCDO->bRadialDamageVelChange);
+			}
 		}
 	}
 }
@@ -1018,6 +1044,12 @@ void UPrimitiveComponent::PostEditImport()
 
 void UPrimitiveComponent::BeginDestroy()
 {
+	// Whether static or dynamic, all references need to be freed
+	if (IsAttachedToStreamingManager())
+	{
+		IStreamingManager::Get().NotifyPrimitiveDetached(this);
+	}
+
 	Super::BeginDestroy();
 
 	// Use a fence to keep track of when the rendering thread executes this scene detachment.
@@ -3106,6 +3138,15 @@ void UPrimitiveComponent::SetCustomDepthStencilValue(int32 Value)
 	if (CustomDepthStencilValue != ClampedValue)
 	{
 		CustomDepthStencilValue = ClampedValue;
+		MarkRenderStateDirty();
+	}
+}
+
+void UPrimitiveComponent::SetCustomDepthStencilWriteMask(ERendererStencilMask WriteMask)
+{
+	if (CustomDepthStencilWriteMask != WriteMask)
+	{
+		CustomDepthStencilWriteMask = WriteMask;
 		MarkRenderStateDirty();
 	}
 }

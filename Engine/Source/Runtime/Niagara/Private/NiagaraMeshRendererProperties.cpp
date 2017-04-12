@@ -2,6 +2,7 @@
 
 #include "NiagaraMeshRendererProperties.h"
 #include "NiagaraEffectRendererMeshes.h"
+#include "Engine/StaticMesh.h"
 
 UNiagaraMeshRendererProperties::UNiagaraMeshRendererProperties()
 	: ParticleMesh(nullptr)
@@ -39,7 +40,7 @@ bool UNiagaraMeshRendererProperties::IsMaterialValidForRenderer(UMaterial* Mater
 void UNiagaraMeshRendererProperties::FixMaterial(UMaterial* Material)
 {
 	Material->Modify();
-	Material->bUsedWithMeshParticles = true;
+	Material->bUsedWithNiagaraMeshParticles = true;
 	Material->ForceRecompileForRendering();
 }
 
@@ -57,7 +58,7 @@ void UNiagaraMeshRendererProperties::PostEditChangeProperty(FPropertyChangedEven
 			if (Material)
 			{
 				FMaterialRenderProxy* MaterialProxy = Material->GetRenderProxy(false, false);
-				Material->CheckMaterialUsage(MATUSAGE_MeshParticles);
+				Material->CheckMaterialUsage(MATUSAGE_NiagaraMeshParticles);
 			}
 		}
 	}

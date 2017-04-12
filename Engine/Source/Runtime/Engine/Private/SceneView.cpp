@@ -574,6 +574,7 @@ FSceneView::FSceneView(const FSceneViewInitOptions& InitOptions)
 	, DynamicMeshElementsShadowCullFrustum(nullptr)
 	, PreShadowTranslation(FVector::ZeroVector)
 	, ViewActor(InitOptions.ViewActor)
+	, PlayerIndex(InitOptions.PlayerIndex)
 	, Drawer(InitOptions.ViewElementDrawer)
 	, ViewRect(InitOptions.GetConstrainedViewRect())
 	, UnscaledViewRect(InitOptions.GetConstrainedViewRect())
@@ -610,6 +611,7 @@ FSceneView::FSceneView(const FSceneViewInitOptions& InitOptions)
 	, bIsInstancedStereoEnabled(false)
 	, bIsMultiViewEnabled(false)
 	, bIsMobileMultiViewEnabled(false)
+	, bIsMobileMultiViewDirectEnabled(false)
 	, bShouldBindInstancedViewUB(false)
 	, GlobalClippingPlane(FPlane(0, 0, 0, 0))
 #if WITH_EDITOR
@@ -721,8 +723,14 @@ FSceneView::FSceneView(const FSceneViewInitOptions& InitOptions)
 	static const auto MultiViewCVar = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("vr.MultiView"));
 	bIsMultiViewEnabled = ShaderPlatform == EShaderPlatform::SP_PS4 && (MultiViewCVar && MultiViewCVar->GetValueOnAnyThread() != 0);
 
+#if PLATFORM_ANDROID
 	static const auto MobileMultiViewCVar = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("vr.MobileMultiView"));
-	bIsMobileMultiViewEnabled = (MobileMultiViewCVar && MobileMultiViewCVar->GetValueOnAnyThread() != 0);
+	bIsMobileMultiViewEnabled = StereoPass != eSSP_MONOSCOPIC_EYE && (MobileMultiViewCVar && MobileMultiViewCVar->GetValueOnAnyThread() != 0);
+
+	// TODO: Test platform support for direct
+	static const auto MobileMultiViewDirectCVar = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("vr.MobileMultiView.Direct"));
+	bIsMobileMultiViewDirectEnabled = (MobileMultiViewDirectCVar && MobileMultiViewDirectCVar->GetValueOnAnyThread() != 0);
+#endif
 
 	bShouldBindInstancedViewUB = bIsInstancedStereoEnabled || bIsMobileMultiViewEnabled;
 
@@ -1284,6 +1292,9 @@ void FSceneView::OverridePostProcessSettings(const FPostProcessSettings& Src, fl
 		LERP_PP(Bloom6Size);
 		LERP_PP(BloomDirtMaskIntensity);
 		LERP_PP(BloomDirtMaskTint);
+		LERP_PP(BloomConvolutionSize);
+		LERP_PP(BloomConvolutionCenterUV);
+		LERP_PP(BloomConvolutionPreFilter);
 		LERP_PP(AmbientCubemapIntensity);
 		LERP_PP(AmbientCubemapTint);
 		LERP_PP(AutoExposureLowPercent);
@@ -1369,6 +1380,23 @@ void FSceneView::OverridePostProcessSettings(const FPostProcessSettings& Src, fl
 			Dest.BloomDirtMask = Src.BloomDirtMask;
 		}
 
+		IF_PP(BloomMethod)
+		{
+			Dest.BloomMethod = Src.BloomMethod;
+		}
+
+		// actual texture cannot be blended but the intensity can be blended
+		IF_PP(BloomConvolutionTexture)
+		{
+			Dest.BloomConvolutionTexture = Src.BloomConvolutionTexture;
+		}
+		
+		// A continuous blending of this value would result trashing the pre-convolved bloom kernel cache.
+		IF_PP(BloomConvolutionBufferScale)
+		{
+			Dest.BloomConvolutionBufferScale = Src.BloomConvolutionBufferScale;
+		}
+
 		// actual texture cannot be blended but the intensity can be blended
 		IF_PP(DepthOfFieldBokehShape)
 		{
@@ -1426,6 +1454,8 @@ void FSceneView::OverridePostProcessSettings(const FPostProcessSettings& Src, fl
 		LERP_PP(LPVSpecularOcclusionExponent);
 		LERP_PP(LPVDiffuseOcclusionIntensity);
 		LERP_PP(LPVSpecularOcclusionIntensity);
+		LERP_PP(LPVFadeRange);
+		LERP_PP(LPVDirectionalOcclusionFadeRange);
 
 		if (Src.bOverride_LPVSize)
 		{
@@ -2236,6 +2266,9 @@ void FSceneView::SetupCommonViewUniformBufferParameters(
 	FMatrix PrevViewProj = FTranslationMatrix(DeltaTranslation) * InPrevViewMatrices.GetTranslatedViewMatrix() * InPrevViewMatrices.ComputeProjectionNoAAMatrix();
 
 	ViewUniformShaderParameters.ClipToPrevClip = InvViewProj * PrevViewProj;
+	ViewUniformShaderParameters.TemporalAAJitter = FVector4(
+		InViewMatrices.GetTemporalAAJitter().X,		InViewMatrices.GetTemporalAAJitter().Y,
+		InPrevViewMatrices.GetTemporalAAJitter().X, InPrevViewMatrices.GetTemporalAAJitter().Y );
 
 	ViewUniformShaderParameters.UnlitViewmodeMask = !Family->EngineShowFlags.Lighting ? 1 : 0;
 	ViewUniformShaderParameters.OutOfBoundsMask = Family->EngineShowFlags.VisualizeOutOfBoundsPixels ? 1 : 0;

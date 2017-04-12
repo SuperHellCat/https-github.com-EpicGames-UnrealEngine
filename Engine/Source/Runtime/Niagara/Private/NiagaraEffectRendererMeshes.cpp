@@ -6,6 +6,7 @@
 #include "NiagaraDataSet.h"
 #include "NiagaraStats.h"
 #include "Async/ParallelFor.h"
+#include "Engine/StaticMesh.h"
 
 DECLARE_CYCLE_STAT(TEXT("Generate Mesh Vertex Data"), STAT_NiagaraGenMeshVertexData, STATGROUP_Niagara);
 DECLARE_CYCLE_STAT(TEXT("Render Meshes"), STAT_NiagaraRenderMeshes, STATGROUP_Niagara);
@@ -48,7 +49,7 @@ NiagaraEffectRendererMeshes::NiagaraEffectRendererMeshes(ERHIFeatureLevel::Type 
 			UMaterialInterface* ParticleMeshMaterial = Properties->ParticleMesh->GetMaterial(Section.MaterialIndex);
 			if (ParticleMeshMaterial)
 			{
-				ParticleMeshMaterial->CheckMaterialUsage_Concurrent(MATUSAGE_MeshParticles);
+				ParticleMeshMaterial->CheckMaterialUsage_Concurrent(MATUSAGE_NiagaraMeshParticles);
 			}
 		}
 	}
@@ -394,7 +395,7 @@ void NiagaraEffectRendererMeshes::GetDynamicMeshElements(const TArray<const FSce
 bool NiagaraEffectRendererMeshes::SetMaterialUsage()
 {
 	//Causes deadlock :S Need to look at / rework the setting of materials and render modules.
-	return Material && Material->CheckMaterialUsage_Concurrent(MATUSAGE_MeshParticles);
+	return Material && Material->CheckMaterialUsage_Concurrent(MATUSAGE_NiagaraMeshParticles);
 }
 
 

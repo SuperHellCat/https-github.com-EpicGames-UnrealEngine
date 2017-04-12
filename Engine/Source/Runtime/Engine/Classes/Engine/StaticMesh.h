@@ -17,10 +17,8 @@
 #include "Interfaces/Interface_CollisionDataProvider.h"
 #include "Engine/MeshMerging.h"
 #include "UniquePtr.h"
+#include "StaticMeshResources.h"
 #include "StaticMesh.generated.h"
-
-/** The maximum number of static mesh LODs allowed. */
-#define MAX_STATIC_MESH_LODS 8
 
 class FSpeedTreeWind;
 class UAssetUserData;
@@ -872,7 +870,7 @@ private:
 	/**
 	 * Fixes up the material when it was converted to the new staticmesh build process
 	 */
-	TArray<int32> CleanUpRedondantMaterialPostLoad;
+	bool CleanUpRedondantMaterialPostLoad;
 
 #endif // #if WITH_EDITOR
 };

@@ -45,6 +45,7 @@ const TCHAR* GShaderSourceModeDefineName[] =
 	nullptr,
 	TEXT("SOURCE_MODE_SCENE_COLOR_SCENE_DEPTH"),
 	TEXT("SOURCE_MODE_SCENE_DEPTH"),
+	TEXT("SOURCE_MODE_DEVICE_DEPTH"),
 	TEXT("SOURCE_MODE_NORMAL"),
 	TEXT("SOURCE_MODE_BASE_COLOR")
 };
@@ -100,6 +101,7 @@ IMPLEMENT_SHADER_TYPE(template<>, TSceneCapturePS<SCS_SceneColorHDR>, TEXT("Scen
 IMPLEMENT_SHADER_TYPE(template<>, TSceneCapturePS<SCS_SceneColorHDRNoAlpha>, TEXT("SceneCapturePixelShader"), TEXT("Main"), SF_Pixel);
 IMPLEMENT_SHADER_TYPE(template<>,TSceneCapturePS<SCS_SceneColorSceneDepth>,TEXT("SceneCapturePixelShader"),TEXT("Main"),SF_Pixel);
 IMPLEMENT_SHADER_TYPE(template<>,TSceneCapturePS<SCS_SceneDepth>,TEXT("SceneCapturePixelShader"),TEXT("Main"),SF_Pixel);
+IMPLEMENT_SHADER_TYPE(template<>, TSceneCapturePS<SCS_DeviceDepth>, TEXT("SceneCapturePixelShader"), TEXT("Main"), SF_Pixel);
 IMPLEMENT_SHADER_TYPE(template<>,TSceneCapturePS<SCS_Normal>,TEXT("SceneCapturePixelShader"),TEXT("Main"),SF_Pixel);
 IMPLEMENT_SHADER_TYPE(template<>,TSceneCapturePS<SCS_BaseColor>,TEXT("SceneCapturePixelShader"),TEXT("Main"),SF_Pixel);
 
@@ -175,6 +177,14 @@ void FDeferredShadingSceneRenderer::CopySceneCaptureComponentToTarget(FRHIComman
 			else if (SceneCaptureSource == SCS_SceneDepth)
 			{
 				TShaderMapRef<TSceneCapturePS<SCS_SceneDepth> > PixelShader(View.ShaderMap);
+				GraphicsPSOInit.BoundShaderState.PixelShaderRHI = GETSAFERHISHADER_PIXEL(*PixelShader);
+				SetGraphicsPipelineState(RHICmdList, GraphicsPSOInit);
+
+				PixelShader->SetParameters(RHICmdList, View);
+			}
+			else if (ViewFamily.SceneCaptureSource == SCS_DeviceDepth)
+			{
+				TShaderMapRef<TSceneCapturePS<SCS_DeviceDepth> > PixelShader(View.ShaderMap);
 				GraphicsPSOInit.BoundShaderState.PixelShaderRHI = GETSAFERHISHADER_PIXEL(*PixelShader);
 				SetGraphicsPipelineState(RHICmdList, GraphicsPSOInit);
 
@@ -385,18 +395,18 @@ FSceneRenderer* CreateSceneRendererForSceneCapture(
 
 	for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ++ViewIndex)
 	{
-		const FSceneCaptureViewInfo& ViewState = Views[ViewIndex];
+		const FSceneCaptureViewInfo& SceneCaptureViewInfo = Views[ViewIndex];
 
 		FSceneViewInitOptions ViewInitOptions;
-		ViewInitOptions.SetViewRectangle(ViewState.ViewRect);
+		ViewInitOptions.SetViewRectangle(SceneCaptureViewInfo.ViewRect);
 		ViewInitOptions.ViewFamily = &ViewFamily;
-		ViewInitOptions.ViewOrigin = ViewState.ViewLocation;
-		ViewInitOptions.ViewRotationMatrix = ViewState.ViewRotationMatrix;
+		ViewInitOptions.ViewOrigin = SceneCaptureViewInfo.ViewLocation;
+		ViewInitOptions.ViewRotationMatrix = SceneCaptureViewInfo.ViewRotationMatrix;
 		ViewInitOptions.BackgroundColor = FLinearColor::Black;
 		ViewInitOptions.OverrideFarClippingPlaneDistance = MaxViewDistance;
-		ViewInitOptions.StereoPass = ViewState.StereoPass;
-		ViewInitOptions.SceneViewStateInterface = (ViewInitOptions.StereoPass != EStereoscopicPass::eSSP_RIGHT_EYE) ? SceneCaptureComponent->GetViewState() : SceneCaptureComponent->GetStereoViewState();
-		ViewInitOptions.ProjectionMatrix = ViewState.ProjectionMatrix;
+		ViewInitOptions.StereoPass = SceneCaptureViewInfo.StereoPass;
+		ViewInitOptions.SceneViewStateInterface = SceneCaptureComponent->GetViewState(ViewIndex);
+		ViewInitOptions.ProjectionMatrix = SceneCaptureViewInfo.ProjectionMatrix;
 		ViewInitOptions.LODDistanceFactor = FMath::Clamp(SceneCaptureComponent->LODDistanceFactor, .01f, 100.0f);
 
 		if (bCaptureSceneColor)
@@ -464,7 +474,7 @@ FSceneRenderer* CreateSceneRendererForSceneCapture(
 
 		ViewFamily.Views.Add(View);
 
-		View->StartFinalPostprocessSettings(ViewState.ViewLocation);
+		View->StartFinalPostprocessSettings(SceneCaptureViewInfo.ViewLocation);
 		View->OverridePostProcessSettings(*PostProcessSettings, PostProcessBlendWeight);
 		View->EndFinalPostprocessSettings(ViewInitOptions);
 	}
@@ -486,19 +496,19 @@ FSceneRenderer* CreateSceneRendererForSceneCapture(
 	FPostProcessSettings* PostProcessSettings,
 	float PostProcessBlendWeight)
 {
-	FSceneCaptureViewInfo ViewState;
-	ViewState.ViewRotationMatrix = ViewRotationMatrix;
-	ViewState.ViewLocation = ViewLocation;
-	ViewState.ProjectionMatrix = ProjectionMatrix;
-	ViewState.StereoPass = EStereoscopicPass::eSSP_FULL;
-	ViewState.ViewRect = FIntRect(0, 0, RenderTargetSize.X, RenderTargetSize.Y);
+	FSceneCaptureViewInfo SceneCaptureViewInfo;
+	SceneCaptureViewInfo.ViewRotationMatrix = ViewRotationMatrix;
+	SceneCaptureViewInfo.ViewLocation = ViewLocation;
+	SceneCaptureViewInfo.ProjectionMatrix = ProjectionMatrix;
+	SceneCaptureViewInfo.StereoPass = EStereoscopicPass::eSSP_FULL;
+	SceneCaptureViewInfo.ViewRect = FIntRect(0, 0, RenderTargetSize.X, RenderTargetSize.Y);
 	
 	return CreateSceneRendererForSceneCapture(
 		Scene, 
 		SceneCaptureComponent, 
 		RenderTarget, 
 		RenderTargetSize, 
-		{ ViewState },
+		{ SceneCaptureViewInfo },
 		MaxViewDistance, 
 		bCaptureSceneColor, 
 		bIsPlanarReflection, 

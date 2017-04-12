@@ -27,7 +27,6 @@
 #include "HAL/Runnable.h"
 #include "Misc/OutputDeviceArchiveWrapper.h"
 #include "Stats/StatsMisc.h"
-#include "HAL/IOBase.h"
 #include "Containers/Ticker.h"
 #include "Misc/ConfigCacheIni.h"
 #include "Misc/AutomationTest.h"
@@ -326,7 +325,7 @@ void ScalabilityCVarsSinkCallback()
 	}
 
 	{
-		static const auto* MaxCSMShadowResolution = ConsoleMan.FindTConsoleVariableDataInt(TEXT("r.Shadow.MaxCSMShadowResolution"));
+		static const auto* MaxCSMShadowResolution = ConsoleMan.FindTConsoleVariableDataInt(TEXT("r.Shadow.MaxCSMResolution"));
 		LocalScalabilityCVars.MaxCSMShadowResolution = MaxCSMShadowResolution->GetValueOnGameThread();
 	}
 
@@ -802,8 +801,8 @@ void EngineMemoryWarningHandler(const FGenericMemoryWarningContext& GenericConte
 
 	FPlatformMisc::LowLevelOutputDebugStringf(TEXT("EngineMemoryWarningHandler: Mem Used %.2f MB, Texture Memory %.2f MB, Render Target memory %.2f MB, OS Free %.2f MB\n"), 
 		Stats.UsedPhysical / 1048576.0f, 
-		GCurrentTextureMemorySize / 1048576.0f, 
-		GCurrentRendertargetMemorySize / 1048576.0f, 
+		GCurrentTextureMemorySize / 1024.f,
+		GCurrentRendertargetMemorySize / 1024.f,
 		Stats.AvailablePhysical / 1048576.0f);
 
 #if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
@@ -2700,11 +2699,6 @@ bool UEngine::Exec( UWorld* InWorld, const TCHAR* Cmd, FOutputDevice& Ar )
 		return true;
 	}
 
-	if (HMDDevice.IsValid() && HMDDevice->Exec( InWorld, Cmd, Ar ))
-	{
-		return true;
-	}
-
 #if ENABLE_LOC_TESTING
 	{
 		FString CultureName;
@@ -2861,16 +2855,6 @@ bool UEngine::Exec( UWorld* InWorld, const TCHAR* Cmd, FOutputDevice& Ar )
 		return HandleFreezeAllCommand( Cmd, Ar, InWorld );
 	}
 	
-	else if( !GNewAsyncIO && FParse::Command(&Cmd, TEXT("FLUSHIOMANAGER")) )
-	{
-		return HandleFlushIOManagerCommand( Cmd, Ar );
-	}
-	// This will list out the packages which are in the precache list and have not been "loaded" out.  (e.g. could be just there taking up memory!)
-	else if ( !GNewAsyncIO && FParse::Command(&Cmd, TEXT("ListPrecacheMapPackages")))
-	{
-		return HandleListPreCacheMapPackagesCommand(Cmd, Ar);
-	}
-
 	else if( FParse::Command(&Cmd,TEXT("ToggleRenderingThread")) )
 	{
 		return HandleToggleRenderingThreadCommand( Cmd, Ar );
@@ -3307,6 +3291,7 @@ static void DumpHelp(UWorld* InWorld)
 	ConsoleCommandLibrary_DumpLibraryHTML(InWorld, *GEngine, FilePath);
 
 	// Notification in editor
+#if WITH_EDITOR
 	{
 		const FText Message = NSLOCTEXT("UnrealEd", "ConsoleHelpExported", "ConsoleHelp.html was saved as");
 		FNotificationInfo Info(Message);
@@ -3331,6 +3316,7 @@ static void DumpHelp(UWorld* InWorld)
 		FPlatformProcess::LaunchURL(*LaunchableURL, nullptr, nullptr);
 #endif
 	}
+#endif// WITH_EDITOR
 }
 static FAutoConsoleCommandWithWorld GConsoleCommandHelp(
 	TEXT("help"),
@@ -3504,31 +3490,6 @@ bool UEngine::HandleFreezeAllCommand( const TCHAR* Cmd, FOutputDevice& Ar, UWorl
 {
 	ProcessToggleFreezeCommand( InWorld );
 	ProcessToggleFreezeStreamingCommand(InWorld);
-	return true;
-}
-
-bool UEngine::HandleFlushIOManagerCommand( const TCHAR* Cmd, FOutputDevice& Ar )
-{
-	check(!GNewAsyncIO);
-	FIOSystem::Get().BlockTillAllRequestsFinishedAndFlushHandles();
-	return true;
-}
-bool UEngine::HandleListPreCacheMapPackagesCommand(const TCHAR* Cmd, FOutputDevice& Ar)
-{
-	check(!GNewAsyncIO);
-	TArray<FString> Packages;
-	FLinkerLoad::GetListOfPackagesInPackagePrecacheMap(Packages);
-
-	Packages.Sort();
-
-	Ar.Logf(TEXT("Total Number Of Packages In PrecacheMap: %i "), Packages.Num());
-
-	for (int32 i = 0; i < Packages.Num(); ++i)
-	{
-		Ar.Logf(TEXT("%i %s"), i, *Packages[i]);
-	}
-	Ar.Logf(TEXT("Total Number Of Packages In PrecacheMap: %i "), Packages.Num());
-
 	return true;
 }
 

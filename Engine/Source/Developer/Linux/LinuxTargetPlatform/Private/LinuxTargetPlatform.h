@@ -227,9 +227,15 @@ public:
 		{
 			static FName NAME_GLSL_150(TEXT("GLSL_150"));
 			static FName NAME_GLSL_430(TEXT("GLSL_430"));
+			static FName NAME_VULKAN_SM4(TEXT("SF_VULKAN_SM4"));
+			static FName NAME_VULKAN_SM5(TEXT("SF_VULKAN_SM5"));
+			static FName NAME_VULKAN_ES31(TEXT("SF_VULKAN_ES31"));
 
 			OutFormats.AddUnique(NAME_GLSL_150);
 			OutFormats.AddUnique(NAME_GLSL_430);
+			OutFormats.AddUnique(NAME_VULKAN_SM4);
+			OutFormats.AddUnique(NAME_VULKAN_SM5);
+			OutFormats.AddUnique(NAME_VULKAN_ES31);
 		}
 	}
 
@@ -257,9 +263,6 @@ public:
 			OutFormats.AddUnique(FName(*ShaderFormat));
 		}
 	}
-	
-	virtual void GetAllCachedShaderFormats( TArray<FName>& OutFormats ) const override {}
-
 	virtual const class FStaticMeshLODSettings& GetStaticMeshLODSettings( ) const override
 	{
 		return StaticMeshLODSettings;

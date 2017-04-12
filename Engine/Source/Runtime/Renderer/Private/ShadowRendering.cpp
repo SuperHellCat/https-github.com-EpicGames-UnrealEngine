@@ -119,7 +119,8 @@ float GetLightFadeFactor(const FSceneView& View, const FLightSceneProxy* Proxy)
 	float SizeFade = FMath::Square(FMath::Min(0.0002f, GMinScreenRadiusForLights / Bounds.W) * View.LODDistanceFactor) * DistanceSquared;
 	SizeFade = FMath::Clamp(6.0f - 6.0f * SizeFade, 0.0f, 1.0f);
 
-	float MaxDist = Proxy->GetMaxDrawDistance();
+	extern float GLightMaxDrawDistanceScale;
+	float MaxDist = Proxy->GetMaxDrawDistance() * GLightMaxDrawDistanceScale;
 	float Range = Proxy->GetFadeRange();
 	float DistanceFade = MaxDist ? (MaxDist - FMath::Sqrt(DistanceSquared)) / Range : 1.0f;
 	DistanceFade = FMath::Clamp(DistanceFade, 0.0f, 1.0f);
@@ -777,6 +778,23 @@ void FProjectedShadowInfo::SetupProjectionStencilMask(
 				const FMeshBatchAndRelevance& MeshBatchAndRelevance = DynamicSubjectMeshElements[MeshBatchIndex];
 				const FMeshBatch& MeshBatch = *MeshBatchAndRelevance.Mesh;
 				FDepthDrawingPolicyFactory::DrawDynamicMesh(RHICmdList, *View, Context, MeshBatch, true, DrawRenderState, MeshBatchAndRelevance.PrimitiveSceneProxy, MeshBatch.BatchHitProxyId);
+			}
+
+			for (int32 ElementIndex = 0; ElementIndex < StaticSubjectMeshElements.Num(); ++ElementIndex)
+			{
+				const FStaticMesh& StaticMesh = *StaticSubjectMeshElements[ElementIndex].Mesh;
+				FDepthDrawingPolicyFactory::DrawStaticMesh(
+					RHICmdList,
+					*View,
+					FDepthDrawingPolicyFactory::ContextType(DDM_AllOccluders, false),
+					StaticMesh,
+					StaticMesh.bRequiresPerElementVisibility ? View->StaticMeshBatchVisibility[StaticMesh.Id] : ((1ull << StaticMesh.Elements.Num()) - 1),
+					true,
+					DrawRenderState,
+					StaticMesh.PrimitiveSceneInfo->Proxy,
+					StaticMesh.BatchHitProxyId,
+					false
+				);
 			}
 		}
 	}

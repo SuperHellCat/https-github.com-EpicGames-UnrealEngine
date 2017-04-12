@@ -85,7 +85,7 @@
 
 // shader compiler processAsyncResults
 #include "ShaderCompiler.h"
-#include "ShaderCache.h"
+#include "ShaderCodeLibrary.h"
 #include "Engine/LevelStreaming.h"
 #include "Engine/TextureLODSettings.h"
 #include "ProfilingDebugging/CookStats.h"
@@ -2909,14 +2909,6 @@ void UCookOnTheFlyServer::SaveCookedPackage(UPackage* Package, uint32 SaveFlags,
 		EObjectFlags FlagsToCook = RF_Public;
 
 
-		bool bShouldCompressPackage = IsCookFlagSet(ECookInitializationFlags::Compressed);
-
-		if (CookByTheBookOptions)
-		{
-			bShouldCompressPackage &= (CookByTheBookOptions->bForceDisableCompressedPackages == false);
-			bShouldCompressPackage |= CookByTheBookOptions->bForceEnableCompressedPackages;
-		}
-
 		ITargetPlatformManagerModule& TPM = GetTargetPlatformManagerRef();
 
 		static TArray<ITargetPlatform*> ActiveStartupPlatforms = TPM.GetCookingTargetPlatforms();
@@ -2949,17 +2941,6 @@ void UCookOnTheFlyServer::SaveCookedPackage(UPackage* Package, uint32 SaveFlags,
 				TargetPlatformNames.Add(FName(*Platform->PlatformName()));
 			}
 		}
-		
-		for (ITargetPlatform* TargetPlatform : Platforms)
-		{
-			bShouldCompressPackage &= TargetPlatform->SupportsFeature(ETargetPlatformFeatures::ShouldUseCompressedCookedPackages);
-		}
-
-		if (bShouldCompressPackage)
-		{
-			Package->SetPackageFlags(PKG_StoreCompressed);
-		}
-
 		
 		for (int32 PlatformIndex = 0; PlatformIndex < Platforms.Num(); ++PlatformIndex )
 		{
@@ -5500,7 +5481,6 @@ void UCookOnTheFlyServer::CleanSandbox(const bool bIterative)
 					FString SandboxDirectory = GetSandboxDirectory(Target->PlatformName());
 					IFileManager::Get().DeleteDirectory(*SandboxDirectory, false, true);
 
-
 					SaveCurrentIniSettings(Target);
 				}
 					else
@@ -6191,6 +6171,29 @@ void UCookOnTheFlyServer::CookByTheBookFinished()
 	GRedirectCollector.LogTimers();
 	UCookerSettings const* CookerSettings = GetDefault<UCookerSettings>();
 
+	const UProjectPackagingSettings* const PackagingSettings = GetDefault<UProjectPackagingSettings>();
+	bool const bCacheShaderLibraries = !IsCookingDLC();
+	if (bCacheShaderLibraries && PackagingSettings->bShareMaterialShaderCode)
+	{
+		ITargetPlatformManagerModule& TPM = GetTargetPlatformManagerRef();
+		
+		// Save shader code map
+		{
+			for (const FName& TargetPlatformName : CookByTheBookOptions->TargetPlatformNames)
+			{
+				FString TargetPlatformNameString = TargetPlatformName.ToString();
+				const ITargetPlatform* TargetPlatform = TPM.FindTargetPlatform(TargetPlatformNameString);
+				FString ShaderCodeDir = ConvertToFullSandboxPath(*FPaths::GameContentDir(), true, TargetPlatformNameString);
+				FString DebugShaderCodeDir = ShaderCodeDir + TEXT("ShaderDebug");
+				
+				TArray<FName> ShaderFormats;
+				TargetPlatform->GetAllTargetedShaderFormats(ShaderFormats);
+				
+				FShaderCodeLibrary::SaveShaderCode(ShaderCodeDir, DebugShaderCodeDir, ShaderFormats);
+			}
+		}
+	}
+	
 	if (IsChildCooker())
 	{
 		// if we are the child cooker create a list of all the packages which we think wes hould have cooked but didn't
@@ -6203,6 +6206,11 @@ void UCookOnTheFlyServer::CookByTheBookFinished()
 		if (IBlueprintNativeCodeGenModule::IsNativeCodeGenModuleLoaded())
 		{
 			IBlueprintNativeCodeGenModule::Get().SaveManifest();
+		}
+		
+		if (bCacheShaderLibraries && PackagingSettings->bShareMaterialShaderCode)
+		{
+			FShaderCodeLibrary::Shutdown();
 		}
 	}
 	else
@@ -6235,20 +6243,28 @@ void UCookOnTheFlyServer::CookByTheBookFinished()
 		const FString CookedAssetRegistry = FPaths::GameDir() / TEXT("CookedAssetRegistry.json");
 		const FString SandboxCookedAssetRegistryFilename = ConvertToFullSandboxPath(*CookedAssetRegistry, true);
 
-		if(!IsCookFlagSet(ECookInitializationFlags::Iterative) && CookByTheBookOptions->ChildCookers.Num() == 0 && !IsCookingInEditor())
+		ITargetPlatformManagerModule& TPM = GetTargetPlatformManagerRef();
+		if (bCacheShaderLibraries && PackagingSettings->bShareMaterialShaderCode)
 		{
-			FString OutputDir = GetOutputDirectoryOverride();
-			
-			for(FName PlatformName : CookByTheBookOptions->TargetPlatformNames)
+			if (PackagingSettings->bSharedMaterialNativeLibraries)
 			{
-				FString PlatformDir = (OutputDir.Replace(TEXT("[Platform]"), *PlatformName.ToString()) / FApp::GetGameName()) / TEXT("Content");
-				FShaderCache::SaveBinaryCache(PlatformDir, PlatformName);
+				for (const FName& TargetPlatformName : CookByTheBookOptions->TargetPlatformNames)
+				{
+					FString TargetPlatformNameString = TargetPlatformName.ToString();
+					const ITargetPlatform* TargetPlatform = TPM.FindTargetPlatform(TargetPlatformNameString);
+					FString ShaderCodeDir = ConvertToFullSandboxPath(*FPaths::GameContentDir(), true, TargetPlatformNameString);
+					FString DebugShaderCodeDir = ShaderCodeDir + TEXT("ShaderDebug");
+					
+					TArray<FName> ShaderFormats;
+					TargetPlatform->GetAllTargetedShaderFormats(ShaderFormats);
+					
+					FShaderCodeLibrary::PackageNativeShaderLibrary(ShaderCodeDir, DebugShaderCodeDir, ShaderFormats);
+				}
 			}
 			
-			FShaderCache::ShutdownShaderCache();
-		}
+			FShaderCodeLibrary::Shutdown();
+		}				
 		
-		ITargetPlatformManagerModule& TPM = GetTargetPlatformManagerRef();
 		{
 			SCOPE_TIMER(SavingCurrentIniSettings)
 			for ( const FName& TargetPlatformName : CookByTheBookOptions->TargetPlatformNames )
@@ -6615,8 +6631,6 @@ void UCookOnTheFlyServer::StartCookByTheBook( const FCookByTheBookStartupOptions
 	CookByTheBookOptions->bGenerateStreamingInstallManifests = CookByTheBookStartupOptions.bGenerateStreamingInstallManifests;
 	CookByTheBookOptions->bGenerateDependenciesForMaps = CookByTheBookStartupOptions.bGenerateDependenciesForMaps;
 	CookByTheBookOptions->CreateReleaseVersion = CreateReleaseVersion;
-	CookByTheBookOptions->bForceEnableCompressedPackages = !!(CookOptions & ECookByTheBookOptions::ForceEnableCompressed);
-	CookByTheBookOptions->bForceDisableCompressedPackages = !!(CookOptions & ECookByTheBookOptions::ForceDisableCompressed);
 	CookByTheBookOptions->ChildCookFilename = CookByTheBookStartupOptions.ChildCookFileName;
 	CookByTheBookOptions->bDisableUnsolicitedPackages = !!(CookOptions & ECookByTheBookOptions::DisableUnsolicitedPackages);
 	CookByTheBookOptions->ChildCookIdentifier = CookByTheBookStartupOptions.ChildCookIdentifier;
@@ -6741,9 +6755,6 @@ void UCookOnTheFlyServer::StartCookByTheBook( const FCookByTheBookStartupOptions
 
 	if (!IsChildCooker())
 	{
-		bool const bShaderCodeCacheCook = (!IsCookFlagSet(ECookInitializationFlags::Iterative) && CookByTheBookStartupOptions.NumProcesses == 0 && CookByTheBookOptions->ChildCookers.Num() == 0 && !IsCookingInEditor());
-		
-		TArray<FName> CachedShaderFormats;
 		for (ITargetPlatform* Platform : TargetPlatforms)
 		{
 			FName PlatformName = FName(*Platform->PlatformName());
@@ -6752,18 +6763,14 @@ void UCookOnTheFlyServer::StartCookByTheBook( const FCookByTheBookStartupOptions
 			{
 				CookByTheBookOptions->MapDependencyGraphs.Add(PlatformName);
 			}
-			
-			if(bShaderCodeCacheCook)
-			{
-				CachedShaderFormats.Reset();
-				Platform->GetAllCachedShaderFormats(CachedShaderFormats);
-				if(!FShaderCache::GetShaderCache() && CachedShaderFormats.Num() > 0)
-				{
-					FShaderCache::InitShaderCache(SCO_Cooking);
-				}
-				FShaderCache::CacheCookedShaderPlatforms(PlatformName, CachedShaderFormats);
-			}
 		}
+	}
+	
+	// shader code sharing does not support multiple packages yet
+	bool const bCacheShaderLibraries = !IsCookingDLC();
+	if (bCacheShaderLibraries && PackagingSettings->bShareMaterialShaderCode)
+	{
+		FShaderCodeLibrary::InitForCooking(PackagingSettings->bSharedMaterialNativeLibraries);
 	}
 
 	if ( IsCookingDLC() )
@@ -6801,7 +6808,6 @@ void UCookOnTheFlyServer::StartCookByTheBook( const FCookByTheBookStartupOptions
 				TArray<FName> PlatformNames;
 				TArray<bool> Succeeded;
 				Succeeded.Add(true);
-				PlatformNames.Add(PlatformName);
 				for (const FName& PackageFilename : PackageList)
 				{
 					CookedPackages.Add( MoveTemp( FFilePlatformCookedPackage( PackageFilename, PlatformNames, Succeeded) ) );

@@ -14,6 +14,7 @@
 
 // PhysX library imports
 
+
 #if PLATFORM_WINDOWS || PLATFORM_MAC
 	void* PxFoundationHandle = nullptr;
 	void* PhysX3CommonHandle = nullptr;
@@ -47,8 +48,6 @@ ENGINE_API void LoadPhysXModules()
 
 	#if _MSC_VER >= 1900
 		FString VSDirectory(TEXT("VS2015/"));
-	#elif _MSC_VER >= 1800
-		FString VSDirectory(TEXT("VS2013/"));
 	#else
 		#error "Unrecognized Visual Studio version."
 	#endif

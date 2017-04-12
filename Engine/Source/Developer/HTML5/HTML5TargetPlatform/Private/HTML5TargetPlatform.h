@@ -74,9 +74,6 @@ public:
 	virtual void GetAllPossibleShaderFormats( TArray<FName>& OutFormats ) const override;
 
 	virtual void GetAllTargetedShaderFormats( TArray<FName>& OutFormats ) const override;
-	
-	virtual void GetAllCachedShaderFormats( TArray<FName>& OutFormats ) const override {}
-
 	virtual const class FStaticMeshLODSettings& GetStaticMeshLODSettings() const override;
 
 	virtual void GetTextureFormats( const UTexture* InTexture, TArray<FName>& OutFormats ) const override;
@@ -140,5 +137,7 @@ private:
 
 	// Holds a critical section for locking access to the collection of devices.
 	static FCriticalSection DevicesCriticalSection;
+
+	void PopulateDevices(TArray<FString>& DeviceMaps, FString prefix);
 
 };

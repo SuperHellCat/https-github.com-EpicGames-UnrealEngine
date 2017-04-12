@@ -240,6 +240,7 @@ FSceneRenderTargets::FSceneRenderTargets(const FViewInfo& View, const FSceneRend
 	, bVelocityPass(SnapshotSource.bVelocityPass)
 	, bSeparateTranslucencyPass(SnapshotSource.bSeparateTranslucencyPass)
 	, GBufferResourcesUniformBuffer(SnapshotSource.GBufferResourcesUniformBuffer)
+	, GBufferDummyResourcesUniformBuffer(SnapshotSource.GBufferDummyResourcesUniformBuffer)
 	, BufferSize(SnapshotSource.BufferSize)
 	, SeparateTranslucencyBufferSize(SnapshotSource.SeparateTranslucencyBufferSize)
 	, SeparateTranslucencyScale(SnapshotSource.SeparateTranslucencyScale)
@@ -765,12 +766,19 @@ void FSceneRenderTargets::AllocSceneColor(FRHICommandList& RHICmdList)
 
 void FSceneRenderTargets::AllocMobileMultiViewSceneColor(FRHICommandList& RHICmdList)
 {
+	// For mono support. 
+	// Ensure we clear alpha to 0. We use alpha to tag which pixels had objects rendered into them so we can mask them out for the mono pass
+	if (MobileMultiViewSceneColor && !(MobileMultiViewSceneColor->GetRenderTargetItem().TargetableTexture->GetClearBinding() == DefaultColorClear))
+	{
+		MobileMultiViewSceneColor.SafeRelease();
+	}
+
 	if (!MobileMultiViewSceneColor)
 	{
 		const EPixelFormat SceneColorBufferFormat = GetSceneColorFormat();
 		const FIntPoint MultiViewBufferSize(BufferSize.X / 2, BufferSize.Y);
 
-		FPooledRenderTargetDesc Desc(FPooledRenderTargetDesc::Create2DDesc(MultiViewBufferSize, SceneColorBufferFormat, FClearValueBinding::Black, TexCreate_None, TexCreate_RenderTargetable, false));
+		FPooledRenderTargetDesc Desc(FPooledRenderTargetDesc::Create2DDesc(MultiViewBufferSize, SceneColorBufferFormat, DefaultColorClear, TexCreate_None, TexCreate_RenderTargetable, false));
 		Desc.Flags |= TexCreate_FastVRAM;
 		Desc.NumSamples = GetNumSceneColorMSAASamples(CurrentFeatureLevel);
 		Desc.ArraySize = 2;
@@ -782,12 +790,18 @@ void FSceneRenderTargets::AllocMobileMultiViewSceneColor(FRHICommandList& RHICmd
 
 void FSceneRenderTargets::AllocMobileMultiViewDepth(FRHICommandList& RHICmdList)
 {
+	// For mono support. We change the default depth clear value to the mono clip plane to clip the stereo portion of the frustum.
+	if (MobileMultiViewSceneDepthZ && !(MobileMultiViewSceneDepthZ->GetRenderTargetItem().TargetableTexture->GetClearBinding() == DefaultDepthClear))
+	{
+		MobileMultiViewSceneDepthZ.SafeRelease();
+	}
+
 	if (!MobileMultiViewSceneDepthZ)
 	{
 		const FIntPoint MultiViewBufferSize(BufferSize.X / 2, BufferSize.Y);
 
 		// Using the result of GetDepthFormat() without stencil due to packed depth-stencil not working in array frame buffers.
-		FPooledRenderTargetDesc Desc(FPooledRenderTargetDesc::Create2DDesc(MultiViewBufferSize, PF_D24, FClearValueBinding::DepthFar, TexCreate_None, TexCreate_DepthStencilTargetable, false));
+		FPooledRenderTargetDesc Desc(FPooledRenderTargetDesc::Create2DDesc(MultiViewBufferSize, PF_D24, DefaultDepthClear, TexCreate_None, TexCreate_DepthStencilTargetable, false));
 		Desc.Flags |= TexCreate_FastVRAM;
 		Desc.NumSamples = GetNumSceneColorMSAASamples(CurrentFeatureLevel);
 		Desc.ArraySize = 2;
@@ -1032,6 +1046,48 @@ void FSceneRenderTargets::AllocGBufferTargets(FRHICommandList& RHICmdList)
 	}
 
 	GBufferRefCount = 1;
+}
+
+void FSceneRenderTargets::AllocDummyGBufferTargets(FRHICommandList& RHICmdList)
+{
+	if (GBufferDummyResourcesUniformBuffer)
+	{
+		return;
+	}
+
+	FTextureRHIRef BlackDummy = GSystemTextures.BlackDummy->GetRenderTargetItem().ShaderResourceTexture;	
+
+	FGBufferResourceStruct GBufferResourceStruct;
+
+	GBufferResourceStruct.GBufferATexture = BlackDummy;
+	GBufferResourceStruct.GBufferBTexture = BlackDummy;
+	GBufferResourceStruct.GBufferCTexture = BlackDummy;
+	GBufferResourceStruct.GBufferDTexture = BlackDummy;
+	GBufferResourceStruct.GBufferETexture = BlackDummy;
+	GBufferResourceStruct.GBufferVelocityTexture = BlackDummy;
+
+	GBufferResourceStruct.GBufferATextureNonMS = BlackDummy;
+	GBufferResourceStruct.GBufferBTextureNonMS = BlackDummy;
+	GBufferResourceStruct.GBufferCTextureNonMS = BlackDummy;
+	GBufferResourceStruct.GBufferDTextureNonMS = BlackDummy;
+	GBufferResourceStruct.GBufferETextureNonMS = BlackDummy;
+	GBufferResourceStruct.GBufferVelocityTextureNonMS = BlackDummy;
+
+	GBufferResourceStruct.GBufferATextureMS = BlackDummy;
+	GBufferResourceStruct.GBufferBTextureMS = BlackDummy;
+	GBufferResourceStruct.GBufferCTextureMS = BlackDummy;
+	GBufferResourceStruct.GBufferDTextureMS = BlackDummy;
+	GBufferResourceStruct.GBufferETextureMS = BlackDummy;
+	GBufferResourceStruct.GBufferVelocityTextureMS = BlackDummy;
+
+	GBufferResourceStruct.GBufferATextureSampler = TStaticSamplerState<>::GetRHI();
+	GBufferResourceStruct.GBufferBTextureSampler = TStaticSamplerState<>::GetRHI();
+	GBufferResourceStruct.GBufferCTextureSampler = TStaticSamplerState<>::GetRHI();
+	GBufferResourceStruct.GBufferDTextureSampler = TStaticSamplerState<>::GetRHI();
+	GBufferResourceStruct.GBufferETextureSampler = TStaticSamplerState<>::GetRHI();
+	GBufferResourceStruct.GBufferVelocityTextureSampler = TStaticSamplerState<>::GetRHI();
+
+	GBufferDummyResourcesUniformBuffer = FGBufferResourceStruct::CreateUniformBuffer(GBufferResourceStruct, UniformBuffer_SingleFrame);
 }
 
 const TRefCountPtr<IPooledRenderTarget>& FSceneRenderTargets::GetSceneColor() const
@@ -1560,13 +1616,25 @@ void FSceneRenderTargets::AllocateMobileRenderTargets(FRHICommandList& RHICmdLis
 	AllocSceneColor(RHICmdList);
 	AllocateCommonDepthTargets(RHICmdList);
 
+#if PLATFORM_ANDROID
 	static const auto MobileMultiViewCVar = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("vr.MobileMultiView"));
+	static const auto CVarMobileMultiViewDirect = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("vr.MobileMultiView.Direct"));
+
 	const bool bIsUsingMobileMultiView = GSupportsMobileMultiView && (MobileMultiViewCVar && MobileMultiViewCVar->GetValueOnAnyThread() != 0);
+
+	// TODO: Test platform support for direct
+	const bool bIsMobileMultiViewDirectEnabled = (CVarMobileMultiViewDirect && CVarMobileMultiViewDirect->GetValueOnAnyThread() != 0);
+
 	if (bIsUsingMobileMultiView)
 	{
-		AllocMobileMultiViewSceneColor(RHICmdList);
+		if (!bIsMobileMultiViewDirectEnabled)
+		{
+			AllocMobileMultiViewSceneColor(RHICmdList);
+		}
+
 		AllocMobileMultiViewDepth(RHICmdList);
 	}
+#endif
 
 	AllocateDebugViewModeTargets(RHICmdList);
 
@@ -2135,8 +2203,12 @@ IPooledRenderTarget* FSceneRenderTargets::RequestCustomDepth(FRHICommandListImme
 						
 		if (!(bHasValidCustomDepth && bHasValidCustomStencil))
 		{
+			// Skip depth decompression, custom depth doesn't benefit from it
+			// Also disables fast clears, but typically only a small portion of custom depth is written to anyway
+			uint32 CustomDepthFlags = TexCreate_NoFastClear;
+
 			// Todo: Could check if writes stencil here and create min viable target
-			FPooledRenderTargetDesc Desc(FPooledRenderTargetDesc::Create2DDesc(BufferSize, PF_DepthStencil, FClearValueBinding::DepthFar, TexCreate_None, TexCreate_DepthStencilTargetable, false));
+			FPooledRenderTargetDesc Desc(FPooledRenderTargetDesc::Create2DDesc(BufferSize, PF_DepthStencil, FClearValueBinding::DepthFar, CustomDepthFlags, TexCreate_DepthStencilTargetable, false));
 			GRenderTargetPool.FindFreeElement(RHICmdList, Desc, CustomDepth, TEXT("CustomDepth"));
 			
 			if (bMobilePath)
@@ -2221,7 +2293,14 @@ bool FSceneRenderTargets::AreRenderTargetClearsValid(ESceneColorFormatType InSce
 			const TRefCountPtr<IPooledRenderTarget>& SceneColorTarget = GetSceneColorForCurrentShadingPath();
 			const bool bColorValid = SceneColorTarget && (SceneColorTarget->GetRenderTargetItem().TargetableTexture->GetClearBinding() == DefaultColorClear);
 			const bool bDepthValid = SceneDepthZ && (SceneDepthZ->GetRenderTargetItem().TargetableTexture->GetClearBinding() == DefaultDepthClear);
+#if PLATFORM_ANDROID
+			// For mobile multi-view + mono support
+			const bool bMobileMultiViewColorValid = (!MobileMultiViewSceneColor || MobileMultiViewSceneColor->GetRenderTargetItem().TargetableTexture->GetClearBinding() == DefaultColorClear);
+			const bool bMobileMultiViewDepthValid = (!MobileMultiViewSceneDepthZ || MobileMultiViewSceneDepthZ->GetRenderTargetItem().TargetableTexture->GetClearBinding() == DefaultDepthClear);
+			return bColorValid && bDepthValid && bMobileMultiViewColorValid && bMobileMultiViewDepthValid;
+#else
 			return bColorValid && bDepthValid;
+#endif
 		}
 	default:
 		{
@@ -2280,6 +2359,8 @@ void FSceneTextureShaderParameters::Bind(const FShaderParameterMap& ParameterMap
 	//
 	MobileCustomStencilTexture.Bind(ParameterMap, TEXT("MobileCustomStencilTexture"));
 	MobileCustomStencilTextureSampler.Bind(ParameterMap, TEXT("MobileCustomStencilTextureSampler"));
+	//
+	SceneStencilTextureParameter.Bind(ParameterMap,TEXT("SceneStencilTexture"));
 }
 
 template< typename ShaderRHIParamRef, typename TRHICmdList >
@@ -2398,6 +2479,18 @@ void FSceneTextureShaderParameters::Set(
 					SetTextureParameter(RHICmdList, ShaderRHI, SceneDepthTextureNonMS, SceneContext.GetAuxiliarySceneDepthSurface());
 				}
 			}
+
+			if (SceneStencilTextureParameter.IsBound())
+			{
+				if (SceneContext.SceneStencilSRV.GetReference())
+				{
+					SetSRVParameter(RHICmdList, ShaderRHI, SceneStencilTextureParameter, SceneContext.SceneStencilSRV);
+				}
+				else
+				{
+					SetTextureParameter(RHICmdList, ShaderRHI, SceneStencilTextureParameter, GSystemTextures.BlackDummy->GetRenderTargetItem().ShaderResourceTexture);
+				}
+			}
 		}
 
 		if (FeatureLevel <= ERHIFeatureLevel::ES3_1)
@@ -2422,7 +2515,8 @@ void FSceneTextureShaderParameters::Set(
 			&& !SceneDepthTextureParameter.IsBound()
 			&& !SceneColorSurfaceParameter.IsBound()
 			&& !SceneDepthSurfaceParameter.IsBound()
-			&& !SceneDepthTextureNonMS.IsBound());
+			&& !SceneDepthTextureNonMS.IsBound()
+			&& !SceneStencilTextureParameter.IsBound());
 	}
 	else if (TextureMode == ESceneRenderTargetsMode::DontSetIgnoreBoundByEditorCompositing)
 	{
@@ -2431,7 +2525,89 @@ void FSceneTextureShaderParameters::Set(
 		ensure(!SceneColorTextureParameter.IsBound()
 			&& !SceneDepthTextureParameter.IsBound()
 			&& !SceneColorSurfaceParameter.IsBound()
-			&& !SceneDepthSurfaceParameter.IsBound());
+			&& !SceneDepthSurfaceParameter.IsBound()
+			&& !SceneStencilTextureParameter.IsBound());
+	}
+	else if (TextureMode == ESceneRenderTargetsMode::InvalidScene)
+	{
+		FTextureRHIParamRef BlackDefault2D = GSystemTextures.BlackDummy->GetRenderTargetItem().ShaderResourceTexture;
+		FTextureRHIParamRef DepthDefault = GSystemTextures.DepthDummy->GetRenderTargetItem().ShaderResourceTexture;
+		FSamplerStateRHIRef Filter = TStaticSamplerState<SF_Point, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI();
+
+		if (SceneColorTextureParameter.IsBound())
+		{
+			
+			
+			SetTextureParameter(
+				RHICmdList,
+				ShaderRHI,
+				SceneColorTextureParameter,
+				SceneColorTextureParameterSampler,
+				Filter,
+				BlackDefault2D
+				);
+		}
+
+		if (SceneAlphaCopyTextureParameter.IsBound())
+		{			
+			SetTextureParameter(
+				RHICmdList,
+				ShaderRHI,
+				SceneAlphaCopyTextureParameter,
+				SceneAlphaCopyTextureParameterSampler,
+				Filter,
+				BlackDefault2D
+				);
+		}
+
+		if (SceneDepthTextureParameter.IsBound() || SceneDepthTextureParameterSampler.IsBound())
+		{
+			SetTextureParameter(
+				RHICmdList,
+				ShaderRHI,
+				SceneDepthTextureParameter,
+				SceneDepthTextureParameterSampler,
+				Filter,
+				DepthDefault
+				);
+		}
+
+		const auto FeatureLevel = View.GetFeatureLevel();
+
+		if (FeatureLevel >= ERHIFeatureLevel::SM5)
+		{
+			SetTextureParameter(RHICmdList, ShaderRHI, SceneColorSurfaceParameter, BlackDefault2D);
+		}
+		if (FeatureLevel >= ERHIFeatureLevel::SM4)
+		{
+			if (SceneDepthSurfaceParameter.IsBound())
+			{
+				SetTextureParameter(RHICmdList, ShaderRHI, SceneDepthSurfaceParameter, DepthDefault);
+			}
+			if (SceneDepthTextureNonMS.IsBound())
+			{
+				SetTextureParameter(RHICmdList, ShaderRHI, SceneDepthTextureNonMS, DepthDefault);
+			}
+			if (SceneStencilTextureParameter.IsBound())
+			{
+				SetTextureParameter(RHICmdList, ShaderRHI, SceneStencilTextureParameter, BlackDefault2D);
+			}
+		}
+
+		if (FeatureLevel <= ERHIFeatureLevel::ES3_1)
+		{
+			if (MobileCustomStencilTexture.IsBound())
+			{
+				SetTextureParameter(
+					RHICmdList,
+					ShaderRHI,
+					MobileCustomStencilTexture,
+					MobileCustomStencilTextureSampler,
+					Filter,
+					BlackDefault2D
+					);
+			}
+		}
 	}
 
 	if( DirectionalOcclusionSampler.IsBound() )
@@ -2502,6 +2678,7 @@ FArchive& operator<<(FArchive& Ar,FSceneTextureShaderParameters& Parameters)
 	Ar << Parameters.DirectionalOcclusionTexture;
 	Ar << Parameters.MobileCustomStencilTexture;
 	Ar << Parameters.MobileCustomStencilTextureSampler;
+	Ar << Parameters.SceneStencilTextureParameter;
 	return Ar;
 }
 
@@ -2625,6 +2802,33 @@ void FDeferredPixelShaderParameters::Set(TRHICmdList& RHICmdList, const ShaderRH
 	{
 		// Verify that none of these are actually bound
 		checkSlow(!GBufferResources.IsBound());
+	}
+	else if (TextureMode == ESceneRenderTargetsMode::InvalidScene)
+	{
+		FTextureRHIParamRef BlackDefault2D = GSystemTextures.BlackDummy->GetRenderTargetItem().ShaderResourceTexture;
+		FTextureRHIParamRef WhiteDefault2D = GSystemTextures.WhiteDummy->GetRenderTargetItem().ShaderResourceTexture;
+		FTextureRHIParamRef DepthDefault = GSystemTextures.DepthDummy->GetRenderTargetItem().ShaderResourceTexture;
+		
+		SetTextureParameter(RHICmdList, ShaderRHI, CustomDepthTexture, CustomDepthTextureSampler, TStaticSamplerState<>::GetRHI(), DepthDefault);
+
+		if (FeatureLevel >= ERHIFeatureLevel::SM4)
+		{
+			if (GBufferResources.IsBound())
+			{
+				SetUniformBufferParameter(RHICmdList, ShaderRHI, GBufferResources, SceneContext.GetDummyGBufferResourcesUniformBuffer());
+			}
+
+			SetTextureParameter(RHICmdList, ShaderRHI, ScreenSpaceAOTexture, ScreenSpaceAOTextureSampler, TStaticSamplerState<>::GetRHI(), WhiteDefault2D);
+			SetTextureParameter(RHICmdList, ShaderRHI, ScreenSpaceAOTextureMS, WhiteDefault2D);
+			SetTextureParameter(RHICmdList, ShaderRHI, ScreenSpaceAOTextureNonMS, WhiteDefault2D);
+
+			SetTextureParameter(RHICmdList, ShaderRHI, CustomDepthTextureNonMS, DepthDefault);
+
+			if (CustomStencilTexture.IsBound())
+			{
+				SetTextureParameter(RHICmdList, ShaderRHI, CustomStencilTexture, BlackDefault2D);
+			}
+		}
 	}
 }
 

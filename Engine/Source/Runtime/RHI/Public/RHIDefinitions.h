@@ -9,6 +9,7 @@
 
 #include "CoreMinimal.h"
 #include "Runtime/Engine/Public/PixelFormat.h"
+#include "HAL/IConsoleManager.h"
 
 enum EShaderFrequency
 {
@@ -60,8 +61,9 @@ enum EShaderPlatform
 	SP_OPENGL_ES3_1_ANDROID = 25,
 	SP_SWITCH				= 26,
 	SP_SWITCH_FORWARD		= 27,
+	SP_METAL_MRT_MAC	= 28,
 
-	SP_NumPlatforms		= 28,
+	SP_NumPlatforms		= 29,
 	SP_NumBits			= 5,
 };
 static_assert(SP_NumPlatforms <= (1 << SP_NumBits), "SP_NumPlatforms will not fit on SP_NumBits");
@@ -225,6 +227,21 @@ enum ECompareFunction
 	CF_DepthFarther			= (((int32)ERHIZBuffer::IsInverted != 0) ? CF_Less : CF_Greater),
 };
 static_assert(ECompareFunction_Num <= (1 << ECompareFunction_NumBits), "ECompareFunction_Num will not fit on ECompareFunction_NumBits");
+
+enum EStencilMask
+{
+	SM_Default,
+	SM_255,
+	SM_1,
+	SM_2,
+	SM_4,
+	SM_8,
+	SM_16,
+	SM_32,
+	SM_64,
+	SM_128,
+	SM_Count
+};
 
 enum EStencilOp
 {
@@ -728,7 +745,7 @@ inline bool IsOpenGLPlatform(const EShaderPlatform Platform)
 
 inline bool IsMetalPlatform(const EShaderPlatform Platform)
 {
-	return Platform == SP_METAL || Platform == SP_METAL_MRT || Platform == SP_METAL_SM4 || Platform == SP_METAL_SM5 || Platform == SP_METAL_MACES3_1 || Platform == SP_METAL_MACES2;
+	return Platform == SP_METAL || Platform == SP_METAL_MRT || Platform == SP_METAL_SM4 || Platform == SP_METAL_SM5 || Platform == SP_METAL_MACES3_1 || Platform == SP_METAL_MACES2 || Platform == SP_METAL_MRT_MAC;
 }
 
 inline bool IsConsolePlatform(const EShaderPlatform Platform)
@@ -786,7 +803,8 @@ inline ERHIFeatureLevel::Type GetMaxSupportedFeatureLevel(EShaderPlatform InShad
 	case SP_PCD3D_SM4:
 	case SP_OPENGL_SM4:
 	case SP_OPENGL_SM4_MAC:
-	case SP_METAL_MRT:
+    case SP_METAL_MRT:
+    case SP_METAL_MRT_MAC:
 	case SP_METAL_SM4:
 		return ERHIFeatureLevel::SM4;
 	case SP_PCD3D_ES2:
@@ -819,6 +837,14 @@ inline bool IsFeatureLevelSupported(EShaderPlatform InShaderPlatform, ERHIFeatur
 
 inline bool RHINeedsToSwitchVerticalAxis(EShaderPlatform Platform)
 {
+#if WITH_EDITOR
+	static const auto CVar = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.Mobile.ForceRHISwitchVerticalAxis"));
+	if (CVar->GetValueOnAnyThread())
+	{
+		return true;
+	}
+#endif
+
 	// ES2 & ES3.1 need to flip when rendering to an RT that will be post processed
 	return IsOpenGLPlatform(Platform) && IsMobilePlatform(Platform) && !IsPCPlatform(Platform) && Platform != SP_METAL && !IsVulkanPlatform(Platform)
 	       && Platform != SP_SWITCH && Platform != SP_SWITCH_FORWARD;

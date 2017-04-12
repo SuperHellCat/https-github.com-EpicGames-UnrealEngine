@@ -847,7 +847,7 @@ void UWorld::PostLoad()
 		// Make sure thumbnail info exists
 		if ( !ThumbnailInfo )
 		{
-			ThumbnailInfo = NewObject<UWorldThumbnailInfo>(this);
+			ThumbnailInfo = NewObject<UWorldThumbnailInfo>(this, NAME_None, RF_Transactional);
 		}
 	}
 #endif
@@ -6374,7 +6374,7 @@ void UWorld::ChangeFeatureLevel(ERHIFeatureLevel::Type InFeatureLevel, bool bSho
             SlowTask.EnterProgressFrame(10.0f);
             UMaterialInstance::AllMaterialsCacheResourceShadersForRendering();
             SlowTask.EnterProgressFrame(10.0f);
-            GetGlobalShaderMap(InFeatureLevel);
+            CompileGlobalShaderMap(InFeatureLevel);
             SlowTask.EnterProgressFrame(10.0f);
             GShaderCompilingManager->ProcessAsyncResults(false, true);
 

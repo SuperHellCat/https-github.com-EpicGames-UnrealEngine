@@ -8,6 +8,7 @@
 
 #include "CoreMinimal.h"
 #include "Containers/IndirectArray.h"
+#include "Containers/ArrayView.h"
 #include "Stats/Stats.h"
 #include "RHI.h"
 #include "RenderResource.h"
@@ -433,6 +434,9 @@ public:
 
 	/** Destructor. */
 	~FOcclusionQueryBatcher();
+	
+	/** @returns True if the batcher has any outstanding batches, otherwise false. */
+	bool HasBatches(void) const { return (NumBatchedPrimitives > 0); }
 
 	/** Renders the current batch and resets the batch state. */
 	void Flush(FRHICommandListImmediate& RHICmdList);
@@ -639,8 +643,13 @@ const int32 GMaxForwardShadowCascades = 4;
 	DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_ARRAY(FMatrix, DirectionalLightWorldToShadowMatrix, [GMaxForwardShadowCascades]) \
 	DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_ARRAY(FVector4, DirectionalLightShadowmapMinMax, [GMaxForwardShadowCascades]) \
 	DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(float, DirectionalLightDepthBias) \
+	DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(uint32, DirectionalLightUseStaticShadowing) \
+	DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(FVector4, DirectionalLightStaticShadowBufferSize) \
+	DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER(FMatrix, DirectionalLightWorldToStaticShadow) \
 	DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_TEXTURE(Texture2D, DirectionalLightShadowmapAtlas) \
-	DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_SAMPLER(SamplerState, ShadowmapSampler)
+	DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_SAMPLER(SamplerState, ShadowmapSampler) \
+	DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_TEXTURE(Texture2D, DirectionalLightStaticShadowmap) \
+	DECLARE_UNIFORM_BUFFER_STRUCT_MEMBER_SAMPLER(SamplerState, StaticShadowmapSampler)
 
 BEGIN_UNIFORM_BUFFER_STRUCT_WITH_CONSTRUCTOR(FForwardGlobalLightData,)
 	FORWARD_GLOBAL_LIGHT_DATA_UNIFORM_BUFFER_MEMBER_TABLE
@@ -1047,7 +1056,7 @@ public:
 
 	/** Gets the rendertarget that will be populated by CombineLUTS post process 
 	* for stereo rendering, this will force the post-processing to use the same render target for both eyes*/
-	FSceneRenderTargetItem* GetTonemappingLUTRenderTarget(FRHICommandList& RHICmdList, const int32 LUTSize, const bool bUseVolumeLUT) const;
+	FSceneRenderTargetItem* GetTonemappingLUTRenderTarget(FRHICommandList& RHICmdList, const int32 LUTSize, const bool bUseVolumeLUT, const bool bNeedUAV) const;
 	
 
 
@@ -1464,6 +1473,9 @@ protected:
 	void RenderDistortion(FRHICommandListImmediate& RHICmdList);
 	void RenderDistortionES2(FRHICommandListImmediate& RHICmdList);
 
+	/** Returns the scene color texture multi-view is targeting. */	
+	FTextureRHIParamRef GetMultiViewSceneColor(const FSceneRenderTargets& SceneContext) const;
+
 	/** Composites the monoscopic far field view into the stereo views. */
 	void CompositeMonoscopicFarField(FRHICommandListImmediate& RHICmdList);
 
@@ -1507,7 +1519,7 @@ protected:
 	void InitViews(FRHICommandListImmediate& RHICmdList);
 
 	/** Renders the opaque base pass for mobile. */
-	void RenderMobileBasePass(FRHICommandListImmediate& RHICmdList);
+	void RenderMobileBasePass(FRHICommandListImmediate& RHICmdList, const TArrayView<const FViewInfo*> PassViews);
 
 	/** Render modulated shadow projections in to the scene, loops over any unrendered shadows until all are processed.*/
 	void RenderModulatedShadowProjections(FRHICommandListImmediate& RHICmdList);
@@ -1522,7 +1534,7 @@ protected:
 	void RenderDecals(FRHICommandListImmediate& RHICmdList);
 
 	/** Renders the base pass for translucency. */
-	void RenderTranslucency(FRHICommandListImmediate& RHICmdList);
+	void RenderTranslucency(FRHICommandListImmediate& RHICmdList, const TArrayView<const FViewInfo*> PassViews);
 
 	/** Perform upscaling when post process is not used. */
 	void BasicPostProcess(FRHICommandListImmediate& RHICmdList, FViewInfo &View, bool bDoUpscale, bool bDoEditorPrimitives);
